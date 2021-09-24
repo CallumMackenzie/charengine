@@ -1,0 +1,7 @@
+[package]
+name="charmath"
+version="0.1.0"
+edition="2018"
+extended_vectors="false"
+
+[dependencies]
