@@ -4,26 +4,69 @@ mod tests {
     use charmath::linear::vector::*;
 
     #[test]
-    fn base_test() {
-        let a = Vec3D::new(3f64, 1f64, 4f64);
-        let b = Vec2D::new_vec(&a);
-        let c = Vec4D::new_vec(&b);
-        let d = &a * Vec3D::new(2f64, -1f64, 0.5f64);
-        println!(
-            "VECTORS:\n\ta: {:?}\n\tb: {:?}\n\tc: {:?}\n\td: {:?}",
-            a, b, c, d
+    fn vec2_create() {
+        let a_x = 3.3;
+        let a_y = 1.4;
+        let a_len = f64::sqrt(a_x * a_x + a_y * a_y);
+        let a = Vec2D::new(a_x, a_y);
+        assert_eq!(a.get_x(), a_x, "Vec2D x val wrong.");
+        assert_eq!(a.get_y(), a_y, "Vec2D y val wrong.");
+        assert_eq!(a.len(), a_len, "Vec2D len wrong.");
+        let a = Vec2D::new_arr(&[a_x, a_y]);
+        assert_eq!(a.get_x(), a_x, "Vec2D arr x val wrong.");
+        assert_eq!(a.get_y(), a_y, "Vec2D arr y val wrong.");
+        assert_eq!(a.len(), a_len, "Vec2D arr len wrong.");
+    }
+
+    #[test]
+    fn vec2_math() {
+        let (a_x, a_y) = (1223.3233, 883.323219);
+        let (b_x, b_y) = (323.32, -0.233133);
+        let a_len = f64::sqrt(a_x * a_x + a_y * a_y);
+        let a = Vec2D::new(a_x, a_y);
+        let b = Vec2D::new(b_x, b_y);
+        assert_eq!(
+            a.normalized().get_x(),
+            a_x / a_len,
+            "Vec2D normalized x val wrong."
         );
-        let e = GenericMatrix::<f64>::from_flat(
-            &[1f64, 0f64, 0f64, 1f64, 1f64, 0f64, 0f64, 0f64, 1f64],
-            3,
-            3,
+        assert_eq!(
+            a.normalized().get_y(),
+            a_y / a_len,
+            "Vec2D normalized y val wrong."
         );
-        let f = e.mul_col_vec(&a);
-        let g = e.mul_row_vec(&a);
-        println!(
-            "MATRICES:\n\te: {:?}\n\tf (col): {:?}\n\tg (row): {:?}",
-            e, f, g
-        );
+        assert_eq!(a.add_num(2.0).get_x(), a_x + 2.0, "Add num x wrong.");
+        assert_eq!(a.add_num(1.1).get_y(), a_y + 1.1, "Add num y wrong");
+        assert_eq!(a.sub_num(8.1).get_x(), a_x - 8.1, "Sub num x wrong.");
+        assert_eq!(a.sub_num(0.11).get_y(), a_y - 0.11, "Sub num y wrong");
+        assert_eq!(a.mul_num(0.44).get_x(), a_x * 0.44, "Mul num x wrong.");
+        assert_eq!(a.mul_num(-12.3).get_y(), a_y * -12.3, "Mul num y wrong");
+        assert_eq!(a.div_num(3.32).get_x(), a_x / 3.32, "Div num x wrong.");
+        assert_eq!(a.div_num(2323.1).get_y(), a_y / 2323.1, "Div num y wrong");
+
+        assert_eq!(a.add_vec(&b).get_x(), a_x + b_x, "Add vec x wrong.");
+        assert_eq!(a.add_vec(&b).get_y(), a_y + b_y, "Add vec y wrong");
+        assert_eq!(a.sub_vec(&b).get_x(), a_x - b_x, "Sub vec x wrong.");
+        assert_eq!(a.sub_vec(&b).get_y(), a_y - b_y, "Sub vec y wrong");
+        assert_eq!(a.mul_vec(&b).get_x(), a_x * b_x, "Mul vec x wrong.");
+        assert_eq!(a.mul_vec(&b).get_y(), a_y * b_y, "Mul vec y wrong");
+        assert_eq!(a.div_vec(&b).get_x(), a_x / b_x, "Div vec x wrong.");
+        assert_eq!(a.div_vec(&b).get_y(), a_y / b_y, "Div vec y wrong");
+    }
+
+    #[test]
+    fn generc_matrix_create() {
+        let mat_arr = [1.0, 9.0, 3.3, 0.2, 1.4, 3.41];
+        let mat_w = 2;
+        let mat_h = 3;
+        let mat = GenericMatrix::<f64>::from_flat(&mat_arr, mat_h, mat_w);
+        assert_eq!(mat.get_width(), mat_w, "Matrix wid wrong.");
+        assert_eq!(mat.get_height(), mat_h, "Matrix hei wrong.");
+    }
+
+    #[test]
+    fn matrix_utils() {
+        println!("{:?}", matrices::translation::<i16>(4, &[23, 93, 12, 45]));
         panic!();
     }
 }
