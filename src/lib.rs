@@ -66,7 +66,15 @@ mod tests {
 
     #[test]
     fn matrix_utils() {
-        println!("{:?}", matrices::translation::<i16>(4, &[23, 93, 12, 45]));
-        panic!();
+        let t3d = matrices::translation_3d::<f64, Vec3D>(&Vec3D::new(2f64, 3f64, 8f64));
+        println!("Translation 3D: {:?}", t3d);
+        let s3d = matrices::scale_3d::<f64, Vec3D>(&Vec3D::new(3.3f64, 0.4f64, 1.3f64));
+        println!("Scale 3D: {:?}", s3d);
+        let r3d = matrices::rotation_euler(1f64, 0.3f64, -0.1f64);
+        println!("Euler 3D: {:?}", r3d);
+        let a3d = s3d.mul_mat(&r3d).mul_mat(&t3d);
+        println!("Composited: {:?}", a3d);
+        let origin = Vec4D::new(0f64, 0f64, 0f64, 1f64);
+        println!("New origin pos: {:?}", a3d.mul_row_vec(&origin));
     }
 }

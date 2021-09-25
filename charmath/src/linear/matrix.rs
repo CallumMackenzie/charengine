@@ -1,6 +1,7 @@
 use crate::linear::vector::VectorBase;
 use crate::numeric::CharMathNumeric;
 use crate::CharMathCopy;
+use std::ops::{Index, IndexMut};
 
 impl<NUM: CharMathNumeric<NUM>> CharMathCopy<Vec<Vec<NUM>>> for Vec<Vec<NUM>> {
     fn cm_copy(&self) -> Self {
@@ -15,7 +16,9 @@ impl<NUM: CharMathNumeric<NUM>> CharMathCopy<Vec<Vec<NUM>>> for Vec<Vec<NUM>> {
     }
 }
 
-pub trait MatrixBase<NUM: CharMathNumeric<NUM>> {
+pub trait MatrixBase<NUM: CharMathNumeric<NUM>>:
+    Index<usize, Output = Vec<NUM>> + IndexMut<usize, Output = Vec<NUM>>
+{
     fn get_width(&self) -> usize;
     fn get_height(&self) -> usize;
     fn get_value_ref(&self, h: usize, w: usize) -> &NUM;
@@ -261,10 +264,22 @@ impl<NUM: CharMathNumeric<NUM>> MatrixBase<NUM> for GenericMatrix<NUM> {
         ret
     }
 }
+impl<NUM: CharMathNumeric<NUM>> Index<usize> for GenericMatrix<NUM> {
+    type Output = Vec<NUM>;
+    fn index(&self, i: usize) -> &Self::Output {
+        &self.mat[i]
+    }
+}
+impl<NUM: CharMathNumeric<NUM>> IndexMut<usize> for GenericMatrix<NUM> {
+    fn index_mut(&mut self, i: usize) -> &mut Self::Output {
+        &mut self.mat[i]
+    }
+}
 impl<NUM: CharMathNumeric<NUM>> SquareMatrix<NUM, GenericMatrix<NUM>> for GenericMatrix<NUM> {}
 
 pub mod matrices {
     use crate::linear::matrix::{GenericMatrix, Matrix, MatrixBase};
+    use crate::linear::vector::{Vector, VectorBase};
     use crate::numeric::CharMathNumeric;
 
     pub fn identity<N: CharMathNumeric<N>>(size: usize) -> GenericMatrix<N> {
@@ -277,15 +292,108 @@ pub mod matrices {
     pub fn scale<N: CharMathNumeric<N>>(size: usize, scales: &[N]) -> GenericMatrix<N> {
         let mut ret = GenericMatrix::<N>::sized(size, size);
         for i in 0..size {
-            *ret.get_value_ref_mut(i, i) = scales[i];
+            if i < scales.len() {
+                *ret.get_value_ref_mut(i, i) = scales[i];
+            } else {
+                *ret.get_value_ref_mut(i, i) = N::one();
+            }
         }
         ret
+    }
+    pub fn scale_vector<N: CharMathNumeric<N>, V: VectorBase<N>>(v: &V) -> GenericMatrix<N> {
+        scale::<N>(v.n_elems(), v.get_internal_array())
+    }
+    pub fn scale_3d<N: CharMathNumeric<N>, V: VectorBase<N>>(v: &V) -> GenericMatrix<N> {
+        scale::<N>(4, v.get_internal_array())
+    }
+    pub fn scale_2d<N: CharMathNumeric<N>, V: VectorBase<N>>(v: &V) -> GenericMatrix<N> {
+        scale::<N>(2, v.get_internal_array())
     }
     pub fn translation<N: CharMathNumeric<N>>(size: usize, trans: &[N]) -> GenericMatrix<N> {
         let mut ret = identity::<N>(size);
         for i in 0..(size - 1usize) {
-            *ret.get_value_ref_mut(size - 1usize, i) = trans[i];
+            if i < trans.len() {
+                *ret.get_value_ref_mut(size - 1usize, i) = trans[i];
+            } else {
+                break;
+            }
         }
         ret
+    }
+    pub fn translation_vector<N: CharMathNumeric<N>, V: VectorBase<N>>(v: &V) -> GenericMatrix<N> {
+        translation::<N>(v.n_elems() + 1usize, v.get_internal_array())
+    }
+    pub fn translation_3d<N: CharMathNumeric<N>, V: VectorBase<N>>(v: &V) -> GenericMatrix<N> {
+        translation::<N>(4, v.get_internal_array())
+    }
+    pub fn rotation_euler<N: CharMathNumeric<N>>(x: N, y: N, z: N) -> GenericMatrix<N> {
+        let mut rot_x = identity::<N>(4);
+        rot_x[1][1] = N::cos(x);
+        rot_x[2][2] = N::cos(x);
+        rot_x[1][2] = N::sin(x);
+        rot_x[2][1] = N::neg(N::sin(x));
+        let mut rot_y = identity::<N>(4);
+        rot_y[0][0] = N::cos(y);
+        rot_y[2][2] = N::cos(y);
+        rot_y[0][2] = N::sin(y);
+        rot_y[2][0] = N::neg(N::sin(y));
+        let mut rot_z = identity::<N>(4);
+        rot_z[0][0] = N::cos(z);
+        rot_z[1][1] = N::cos(z);
+        rot_z[0][1] = N::sin(z);
+        rot_z[1][0] = N::neg(N::sin(z));
+        rot_x.mul_mat(&rot_y).mul_mat(&rot_z)
+    }
+    pub fn rotation_vector<N: CharMathNumeric<N>, V: VectorBase<N>>(v: &V) -> GenericMatrix<N> {
+        rotation_euler::<N>(v.get_value(0), v.get_value(1), v.get_value(2))
+    }
+    pub fn perspective<N: CharMathNumeric<N>>(
+        fov: N,
+        aspect: N,
+        near: N,
+        far: N,
+    ) -> GenericMatrix<N> {
+        let mut ret = GenericMatrix::<N>::sized(4, 4);
+        let fov_rad = N::one() / N::tan(N::to_radians(fov * N::half()));
+        ret[0][0] = aspect * fov_rad;
+        ret[1][1] = fov_rad;
+        ret[2][2] = far / (far - near);
+        ret[3][3] = N::zero();
+        ret[2][3] = N::one();
+        ret[3][2] = (far * near * N::neg(N::one())) / (far - near);
+        ret
+    }
+    pub fn look_at_3d<N: CharMathNumeric<N>, V: Vector<N, V>>(
+        pos: &V,
+        target: &V,
+        up: &V,
+    ) -> GenericMatrix<N> {
+        let new_forward = target.sub_vec(pos).normalized();
+        let a = new_forward.mul_num(up.dot(&new_forward));
+        let new_up = up.sub_vec(&a).normalized();
+        let new_right = new_up.cross(&new_forward);
+        let new_pos = pos;
+        GenericMatrix::<N>::from_flat(
+            &[
+                new_right[0],
+                new_right[1],
+                new_right[2],
+                N::zero(),
+                new_up[0],
+                new_up[1],
+                new_up[2],
+                N::zero(),
+                new_forward[0],
+                new_forward[1],
+                new_forward[2],
+                N::zero(),
+                new_pos[0],
+                new_pos[1],
+                new_pos[2],
+                N::one(),
+            ],
+            4,
+            4,
+        )
     }
 }

@@ -100,7 +100,19 @@ macro_rules! vec_op_overload {
 
 macro_rules! vector_def {
     ($CLASS:ident, $NUM:ident, $SIZE:expr) => {
-        impl Vector<$NUM, $CLASS> for $CLASS {}
+        impl Vector<$NUM, $CLASS> for $CLASS {
+            fn new_arr(arr: &[$NUM]) -> $CLASS {
+                let mut vec_arr = [$NUM::zero(); $SIZE];
+                for i in 0..$SIZE {
+                    if i < arr.len() {
+                        vec_arr[i] = arr[i];
+                    } else {
+                        vec_arr[i] = $NUM::zero();
+                    }
+                }
+                $CLASS { vec: vec_arr }
+            }
+        }
         impl CharMathCopy<$CLASS> for $CLASS {
             fn cm_copy(&self) -> $CLASS {
                 $CLASS::new_arr(self.get_internal_array())
@@ -125,32 +137,11 @@ macro_rules! vector_def {
         impl Algebraic<$NUM, $CLASS> for $CLASS {}
     };
 }
-macro_rules! vec_new_arr {
-    ($CLASS:ident, $NUM:ident, $SIZE:expr) => {
-        pub fn new_arr(arr: &[$NUM]) -> $CLASS {
-            let mut vec_arr = [$NUM::zero(); $SIZE];
-            for i in 0..$SIZE {
-                if i < arr.len() {
-                    vec_arr[i] = arr[i];
-                } else {
-                    vec_arr[i] = $NUM::zero();
-                }
-            }
-            $CLASS { vec: vec_arr }
-        }
-        pub fn new_vec(vec: &dyn VectorBase<$NUM>) -> $CLASS {
-            $CLASS::new_arr(vec.get_internal_array())
-        }
-    };
-}
 macro_rules! define_vec {
     ($NAME:ident, $NUM:ident, $LEN:expr) => {
         #[derive(Debug)]
         pub struct $NAME {
             vec: [$NUM; $LEN],
-        }
-        impl $NAME {
-            vec_new_arr!($NAME, $NUM, $LEN);
         }
         vector_def!($NAME, $NUM, $LEN);
         vec_op_overload!($NAME, $NUM);
@@ -267,8 +258,22 @@ pub trait Vector<NUM: Copy + Algebraic<NUM, NUM> + CharMathNumeric<NUM>, VEC: Ve
     + Algebraic<NUM, VEC>
     + AlgebraicAssignable<VEC>
 {
+    fn new_arr(arr: &[NUM]) -> VEC;
+
+    fn new_vec(vec: &dyn VectorBase<NUM>) -> VEC {
+        Self::new_arr(vec.get_internal_array())
+    }
+    fn new_std_vec(vec: &Vec<NUM>) -> VEC {
+        Self::new_arr(&vec[0..vec.len()])
+    }
     fn dot(&self, other: &VEC) -> NUM {
         vector_utils::array_dot::<NUM>(self.get_internal_array(), other.get_internal_array())
+    }
+    fn cross(&self, other: &VEC) -> VEC {
+        Self::new_std_vec(&vector_utils::array_cross::<NUM>(
+            self.get_internal_array(),
+            other.get_internal_array(),
+        ))
     }
     fn normalized(&self) -> VEC {
         self.div_num(self.len())
@@ -384,12 +389,23 @@ pub mod vector_utils {
         }
         ret
     }
-    pub fn vec_dot<T: Copy + crate::numeric::CharMathNumeric<T>>(a: Vec<T>, b: Vec<T>) -> T {
+    pub fn vec_dot<T: crate::numeric::CharMathNumeric<T>>(a: Vec<T>, b: Vec<T>) -> T {
         assert!(a.len() == b.len(), "Array lengths not equal");
         let mut ret = T::zero();
         for i in 0..a.len() {
             ret = ret + (a[i] * b[i]);
         }
+        ret
+    }
+    pub fn array_cross<T: crate::numeric::CharMathNumeric<T>>(a: &[T], b: &[T]) -> Vec<T> {
+        assert!(
+            a.len() == 3 && b.len() == 3,
+            "Input array lengths must be 3."
+        );
+        let mut ret = Vec::<T>::with_capacity(3);
+        ret.push(a[1] * b[2] - a[2] * b[1]);
+        ret.push(a[2] * b[0] - a[0] * b[2]);
+        ret.push(a[0] * b[1] - a[1] * b[0]);
         ret
     }
 }
