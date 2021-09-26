@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use charmath::linear::matrix::*;
+    use charmath::linear::quaternion::*;
     use charmath::linear::vector::*;
 
     #[test]
@@ -60,8 +61,8 @@ mod tests {
         let mat_w = 2;
         let mat_h = 3;
         let mat = GenericMatrix::<f64>::from_flat(&mat_arr, mat_h, mat_w);
-        assert_eq!(mat.get_width(), mat_w, "Matrix wid wrong.");
-        assert_eq!(mat.get_height(), mat_h, "Matrix hei wrong.");
+        assert_eq!(mat.get_width(), mat_w, "Matrix width wrong.");
+        assert_eq!(mat.get_height(), mat_h, "Matrix height wrong.");
     }
 
     #[test]
@@ -70,11 +71,19 @@ mod tests {
         println!("Translation 3D: {:?}", t3d);
         let s3d = matrices::scale_3d::<f64, Vec3D>(&Vec3D::new(3.3f64, 0.4f64, 1.3f64));
         println!("Scale 3D: {:?}", s3d);
-        let r3d = matrices::rotation_euler(1f64, 0.3f64, -0.1f64);
+        let r3d = matrices::rotation_euler(0f64, 0f64, std::f64::consts::PI);
         println!("Euler 3D: {:?}", r3d);
         let a3d = s3d.mul_mat(&r3d).mul_mat(&t3d);
         println!("Composited: {:?}", a3d);
         let origin = Vec4D::new(0f64, 0f64, 0f64, 1f64);
         println!("New origin pos: {:?}", a3d.mul_row_vec(&origin));
+        let unit = Vec4D::new(1f64, 1f64, 1f64, 1f64);
+        println!("New unit vector pos: {:?}", r3d.mul_row_vec(&unit));
+    }
+
+    #[test]
+    fn quaternion_tests() {
+        let a = Quaternion::<f32>::angle_axis::<Vec3F>(0.5f32, &Vec3F::new(1f32, 1f32, 1f32));
+        println!("Quaternion: {:?}", a);
     }
 }

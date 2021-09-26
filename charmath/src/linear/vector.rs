@@ -1,4 +1,4 @@
-macro_rules! vec_operand {
+macro_rules! charmath_def_operand {
     ($CLASS:ident, $NUM:ident, $OPNAME:ident, $CALL1:ident, $CALL2:ident, $CALL3:ident) => {
         impl $OPNAME<&$CLASS> for &$CLASS {
             type Output = $CLASS;
@@ -38,7 +38,6 @@ macro_rules! vec_operand {
         }
     };
 }
-
 macro_rules! vec_assign_operand {
     ($CLASS:ident, $NUM:ident, $ASOP:ident, $ASOPNAME:ident, $VCALL:ident, $NVCALL:ident) => {
         impl $ASOP<$CLASS> for $CLASS {
@@ -76,10 +75,10 @@ macro_rules! vec_assign_operand {
 
 macro_rules! vec_op_overload {
     ($CLASS:ident, $NUM:ident) => {
-        vec_operand!($CLASS, $NUM, Add, add, add_vec, add_num);
-        vec_operand!($CLASS, $NUM, Sub, sub, sub_vec, sub_num);
-        vec_operand!($CLASS, $NUM, Mul, mul, mul_vec, mul_num);
-        vec_operand!($CLASS, $NUM, Div, div, div_vec, div_num);
+        charmath_def_operand!($CLASS, $NUM, Add, add, add_vec, add_num);
+        charmath_def_operand!($CLASS, $NUM, Sub, sub, sub_vec, sub_num);
+        charmath_def_operand!($CLASS, $NUM, Mul, mul, mul_vec, mul_num);
+        charmath_def_operand!($CLASS, $NUM, Div, div, div_vec, div_num);
         vec_assign_operand!($CLASS, $NUM, AddAssign, add_assign, add_eq_vec, add_eq_num);
         vec_assign_operand!($CLASS, $NUM, SubAssign, sub_assign, sub_eq_vec, sub_eq_num);
         vec_assign_operand!($CLASS, $NUM, MulAssign, mul_assign, mul_eq_vec, mul_eq_num);
@@ -119,17 +118,11 @@ macro_rules! vector_def {
             }
         }
         impl VectorBase<$NUM> for $CLASS {
-            fn len(&self) -> $NUM {
-                $NUM::sqrt(self.dot(&self.cm_copy()))
-            }
             fn get_internal_array(&self) -> &[$NUM] {
                 &self.vec
             }
             fn get_mut_internal_array(&mut self) -> &mut [$NUM] {
                 &mut self.vec
-            }
-            fn n_elems(&self) -> usize {
-                $SIZE as usize
             }
         }
         impl AlgebraicAssignable<$CLASS> for $CLASS {}
@@ -147,56 +140,11 @@ macro_rules! define_vec {
         vec_op_overload!($NAME, $NUM);
     };
 }
-macro_rules! vec_xy_impl {
-    ($CLASS:ident, $NUM:ident) => {
-        impl $CLASS {
-            pub fn get_x(&self) -> $NUM {
-                self.get_value(0)
-            }
-            pub fn get_y(&self) -> $NUM {
-                self.get_value(1)
-            }
-            pub fn set_x(&mut self, v: $NUM) {
-                self.set_value(0, v)
-            }
-            pub fn set_y(&mut self, v: $NUM) {
-                self.set_value(1, v)
-            }
-        }
-    };
-}
-macro_rules! vec_xyz_impl {
-    ($CLASS:ident, $NUM:ident) => {
-        vec_xy_impl!($CLASS, $NUM);
-        impl $CLASS {
-            pub fn get_z(&self) -> $NUM {
-                self.get_value(2)
-            }
-            pub fn set_z(&mut self, v: $NUM) {
-                self.set_value(2, v)
-            }
-        }
-    };
-}
-macro_rules! vec_xyzw_impl {
-    ($CLASS:ident, $NUM:ident) => {
-        vec_xyz_impl!($CLASS, $NUM);
-        impl $CLASS {
-            pub fn get_w(&self) -> $NUM {
-                self.get_value(3)
-            }
-            pub fn set_w(&mut self, v: $NUM) {
-                self.set_value(3, v)
-            }
-        }
-    };
-}
 macro_rules! define_vec2 {
     ($CLASS:ident, $NUM:ident) => {
         define_vec!($CLASS, $NUM, 2);
-        vec_xy_impl!($CLASS, $NUM);
-        impl $CLASS {
-            pub fn new(x: $NUM, y: $NUM) -> $CLASS {
+        impl Vec2<$NUM, $CLASS> for $CLASS {
+            fn new(x: $NUM, y: $NUM) -> $CLASS {
                 $CLASS { vec: [x, y] }
             }
         }
@@ -205,9 +153,8 @@ macro_rules! define_vec2 {
 macro_rules! define_vec3 {
     ($CLASS:ident, $NUM:ident) => {
         define_vec!($CLASS, $NUM, 3);
-        vec_xyz_impl!($CLASS, $NUM);
-        impl $CLASS {
-            pub fn new(x: $NUM, y: $NUM, z: $NUM) -> $CLASS {
+        impl Vec3<$NUM, $CLASS> for $CLASS {
+            fn new(x: $NUM, y: $NUM, z: $NUM) -> $CLASS {
                 $CLASS { vec: [x, y, z] }
             }
         }
@@ -216,9 +163,8 @@ macro_rules! define_vec3 {
 macro_rules! define_vec4 {
     ($CLASS:ident, $NUM:ident) => {
         define_vec!($CLASS, $NUM, 4);
-        vec_xyzw_impl!($CLASS, $NUM);
-        impl $CLASS {
-            pub fn new(x: $NUM, y: $NUM, z: $NUM, w: $NUM) -> $CLASS {
+        impl Vec4<$NUM, $CLASS> for $CLASS {
+            fn new(x: $NUM, y: $NUM, z: $NUM, w: $NUM) -> $CLASS {
                 $CLASS { vec: [x, y, z, w] }
             }
         }
@@ -232,9 +178,16 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, 
 pub trait VectorBase<NUM: CharMathNumeric<NUM>> {
     fn get_internal_array(&self) -> &[NUM];
     fn get_mut_internal_array(&mut self) -> &mut [NUM];
-    fn n_elems(&self) -> usize;
-    fn len(&self) -> NUM;
 
+    fn n_elems(&self) -> usize {
+        self.get_internal_array().len()
+    }
+    fn len(&self) -> NUM {
+        NUM::sqrt(vector_utils::array_dot(
+            self.get_internal_array(),
+            self.get_internal_array(),
+        ))
+    }
     fn get_value(&self, index: usize) -> NUM {
         self.get_internal_array()[index]
     }
@@ -268,12 +221,6 @@ pub trait Vector<NUM: Copy + Algebraic<NUM, NUM> + CharMathNumeric<NUM>, VEC: Ve
     }
     fn dot(&self, other: &VEC) -> NUM {
         vector_utils::array_dot::<NUM>(self.get_internal_array(), other.get_internal_array())
-    }
-    fn cross(&self, other: &VEC) -> VEC {
-        Self::new_std_vec(&vector_utils::array_cross::<NUM>(
-            self.get_internal_array(),
-            other.get_internal_array(),
-        ))
     }
     fn normalized(&self) -> VEC {
         self.div_num(self.len())
@@ -407,6 +354,76 @@ pub mod vector_utils {
         ret.push(a[2] * b[0] - a[0] * b[2]);
         ret.push(a[0] * b[1] - a[1] * b[0]);
         ret
+    }
+}
+
+pub trait Vec2<N: CharMathNumeric<N>, V: Vec2<N, V>>: Vector<N, V> {
+    fn new(x: N, y: N) -> V;
+    fn get_x(&self) -> N {
+        self.get_value(0)
+    }
+    fn set_x(&mut self, x: N) {
+        self.set_value(0, x);
+    }
+    fn get_y(&self) -> N {
+        self.get_value(1)
+    }
+    fn set_y(&mut self, y: N) {
+        self.set_value(1, y);
+    }
+}
+pub trait Vec3<N: CharMathNumeric<N>, V: Vec3<N, V>>: Vector<N, V> {
+    fn new(x: N, y: N, z: N) -> V;
+    fn cross(&self, other: &V) -> V {
+        Self::new_std_vec(&vector_utils::array_cross::<N>(
+            self.get_internal_array(),
+            other.get_internal_array(),
+        ))
+    }
+    fn get_x(&self) -> N {
+        self.get_value(0)
+    }
+    fn set_x(&mut self, x: N) {
+        self.set_value(0, x);
+    }
+    fn get_y(&self) -> N {
+        self.get_value(1)
+    }
+    fn set_y(&mut self, y: N) {
+        self.set_value(1, y);
+    }
+    fn get_z(&self) -> N {
+        self.get_value(2)
+    }
+    fn set_z(&mut self, z: N) {
+        self.set_value(2, z);
+    }
+}
+pub trait Vec4<N: CharMathNumeric<N>, V: Vec4<N, V>>: Vector<N, V> {
+    fn new(x: N, y: N, z: N, w: N) -> V;
+    fn get_x(&self) -> N {
+        self.get_value(0)
+    }
+    fn set_x(&mut self, x: N) {
+        self.set_value(0, x);
+    }
+    fn get_y(&self) -> N {
+        self.get_value(1)
+    }
+    fn set_y(&mut self, y: N) {
+        self.set_value(1, y);
+    }
+    fn get_z(&self) -> N {
+        self.get_value(2)
+    }
+    fn set_z(&mut self, z: N) {
+        self.set_value(2, z);
+    }
+    fn get_w(&self) -> N {
+        self.get_value(3)
+    }
+    fn set_w(&mut self, w: N) {
+        self.set_value(3, w);
     }
 }
 
