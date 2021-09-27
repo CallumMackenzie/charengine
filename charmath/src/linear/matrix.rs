@@ -1,3 +1,13 @@
+#[cfg(target_family = "wasm")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    fn js_log_string(a: &str);
+}
+
 use crate::linear::vector::VectorBase;
 use crate::numeric::CharMathNumeric;
 use crate::CharMathCopy;

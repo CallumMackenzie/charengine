@@ -1,3 +1,17 @@
+#[cfg(target_family = "wasm")]
+use wasm_bindgen::prelude::*;
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    fn js_log_string(a: &str);
+}
+
+use crate::numeric::CharMathNumeric;
+use crate::{Algebraic, AlgebraicAssignable, CharMathCopy};
+use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
+
 macro_rules! charmath_def_operand {
     ($CLASS:ident, $NUM:ident, $OPNAME:ident, $CALL1:ident, $CALL2:ident, $CALL3:ident) => {
         impl $OPNAME<&$CLASS> for &$CLASS {
@@ -420,22 +434,6 @@ macro_rules! define_vec4 {
         }
     };
 }
-
-#[cfg(target_family = "wasm")]
-use wasm_bindgen::prelude::*;
-
-#[cfg(target_family = "wasm")]
-#[wasm_bindgen]
-extern "C" {
-    pub fn alert(s: &str);
-
-    #[wasm_bindgen(js_namespace = console, js_name = log)]
-    fn js_log_string(a: &str);
-}
-
-use crate::numeric::CharMathNumeric;
-use crate::{Algebraic, AlgebraicAssignable, CharMathCopy};
-use std::ops::{Add, AddAssign, Div, DivAssign, Index, IndexMut, Mul, MulAssign, Sub, SubAssign};
 
 pub trait VectorBase<NUM: CharMathNumeric<NUM>> {
     fn get_internal_array(&self) -> &[NUM];
