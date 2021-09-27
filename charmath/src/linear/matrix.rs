@@ -408,7 +408,8 @@ pub type Mat2F = Mat2<f32>;
 
 pub mod matrices {
     use crate::linear::matrix::{GenericMatrix, Mat2, Mat4, Matrix, MatrixBase};
-    use crate::linear::vector::{Vec3, VectorBase};
+    use crate::linear::quaternion::Quaternion;
+    use crate::linear::vector::{Vec3, Vec4, VectorBase};
     use crate::numeric::CharMathNumeric;
 
     pub fn identity<N: CharMathNumeric<N>>(size: usize) -> GenericMatrix<N> {
@@ -462,7 +463,7 @@ pub mod matrices {
             2,
         )
     }
-    pub fn rotation_euler<N: CharMathNumeric<N>>(x: N, y: N, z: N) -> Mat4<N> {
+    pub fn rotation_euler_num<N: CharMathNumeric<N>>(x: N, y: N, z: N) -> Mat4<N> {
         let mut rot_x = identity::<N>(4);
         rot_x[1][1] = N::cos(x);
         rot_x[2][2] = N::cos(x);
@@ -480,8 +481,8 @@ pub mod matrices {
         rot_z[1][0] = N::neg(N::sin(z));
         Mat4::<N>::from_matrix(&rot_x.mul_mat(&rot_y).mul_mat(&rot_z))
     }
-    pub fn rotation_vector<N: CharMathNumeric<N>, V: VectorBase<N>>(v: &V) -> Mat4<N> {
-        rotation_euler::<N>(v.get_value(0), v.get_value(1), v.get_value(2))
+    pub fn rotation_euler<N: CharMathNumeric<N>, V: VectorBase<N>>(v: &V) -> Mat4<N> {
+        rotation_euler_num::<N>(v.get_value(0), v.get_value(1), v.get_value(2))
     }
     pub fn perspective<N: CharMathNumeric<N>>(fov: N, aspect: N, near: N, far: N) -> Mat4<N> {
         let mut ret = Mat4::<N>::from_flat(&[], 4, 4);
@@ -526,5 +527,36 @@ pub mod matrices {
             4,
             4,
         )
+    }
+    // #[cfg_attr(target_family = "wasm", wasm_bindgen)]
+    pub fn rotation_quaternion_num<N: CharMathNumeric<N>>(x: N, y: N, z: N, w: N) -> Mat4<N> {
+        let two = N::two();
+        let one = N::one();
+        let zero = N::zero();
+        Mat4::<N>::from_flat(
+            &[
+                one - two * y * y - two * z * z,
+                two * x * y - two * z * w,
+                two * x * z + two * y * w,
+                zero,
+                two * x * y + two * z * w,
+                one - two * x * x - two * z * z,
+                two * y * z - two * x * w,
+                zero,
+                two * x * z - two * y * w,
+                two * y * z + two * x * w,
+                one - two * x * x - two * y * y,
+                zero,
+                zero,
+                zero,
+                zero,
+                one,
+            ],
+            4,
+            4,
+        )
+    }
+    pub fn rotation_quaternion<N: CharMathNumeric<N>>(q: &Quaternion<N>) -> Mat4<N> {
+        rotation_quaternion_num::<N>(q.get_x(), q.get_y(), q.get_z(), q.get_w())
     }
 }

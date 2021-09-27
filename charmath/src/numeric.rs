@@ -5,6 +5,7 @@ pub trait CharMathNumeric<NUM>: Algebraic<NUM, NUM> + AlgebraicAssignable<NUM> +
     fn zero() -> NUM;
     fn half() -> NUM;
     fn one() -> NUM;
+    fn two() -> NUM;
     fn to_radians(deg: NUM) -> NUM;
     fn to_degrees(rad: NUM) -> NUM;
     fn neg(a: NUM) -> NUM;
@@ -19,6 +20,9 @@ macro_rules! charmath_numeric {
         impl CharMathNumeric<$NUM> for $NUM {
             fn zero() -> $NUM {
                 0 as $NUM
+            }
+            fn two() -> $NUM {
+                2 as $NUM
             }
             fn sqrt(a: $NUM) -> $NUM {
                 $CLOSEST_FLOAT::sqrt(a as $CLOSEST_FLOAT) as $NUM

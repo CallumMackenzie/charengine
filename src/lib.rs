@@ -66,12 +66,12 @@ mod tests {
     }
 
     #[test]
-    fn matrix_utils() {
+    fn matrices() {
         let t3d = matrices::translation_3d::<f64, Vec3D>(&Vec3D::new(2f64, 3f64, 8f64));
         println!("Translation 3D: {:?}", t3d);
         let s3d = matrices::scale_3d::<f64, Vec3D>(&Vec3D::new(3.3f64, 0.4f64, 1.3f64));
         println!("Scale 3D: {:?}", s3d);
-        let r3d = matrices::rotation_euler(0f64, 0f64, std::f64::consts::PI);
+        let r3d = matrices::rotation_euler_num(std::f64::consts::PI, 0f64, 0f64);
         println!("Euler 3D: {:?}", r3d);
         let a3d = s3d.mul_mat(&r3d).mul_mat(&t3d);
         println!("Composited: {:?}", a3d);
@@ -83,7 +83,14 @@ mod tests {
 
     #[test]
     fn quaternion_tests() {
-        let a = Quaternion::<f32>::angle_axis::<Vec3F>(0.5f32, &Vec3F::new(1f32, 1f32, 1f32));
+        let a = Quaternion::<f32>::angle_axis::<Vec3F>(
+            std::f32::consts::PI,
+            &Vec3F::new(1f32, 0f32, 0f32),
+        );
+        let b = matrices::rotation_quaternion(&a);
+        let c = b.mul_row_vec(&Vec4F::new(1f32, 1f32, 1f32, 1f32));
         println!("Quaternion: {:?}", a);
+        println!("Rotation matrix: {:?}", b);
+        println!("New unit vector pos: {:?}", c);
     }
 }
