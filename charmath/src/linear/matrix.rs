@@ -13,6 +13,12 @@ use crate::numeric::CharMathNumeric;
 use crate::CharMathCopy;
 use std::ops::{Index, IndexMut};
 
+#[cfg(target_family = "wasm")]
+use crate::linear::vector::{
+    Vec2f32, Vec2f64, Vec2i32, Vec2i64, Vec3f32, Vec3f64, Vec3i32, Vec3i64, Vec4f32, Vec4f64,
+    Vec4i32, Vec4i64, Vector,
+};
+
 impl<N: CharMathNumeric<N>> CharMathCopy<Vec<Vec<N>>> for Vec<Vec<N>> {
     fn cm_copy(&self) -> Self {
         let mut ret = Vec::<Vec<N>>::with_capacity(self.len());
@@ -570,3 +576,251 @@ pub mod matrices {
         rotation_quaternion_num::<N>(q.get_x(), q.get_y(), q.get_z(), q.get_w())
     }
 }
+
+macro_rules! gen_wasm_square_matrix {
+    ($CLASS:ident, $NUM:ident, $SZ:expr, $VEC:ident) => {
+        #[cfg_attr(target_family = "wasm", wasm_bindgen)]
+        #[derive(Debug)]
+        pub struct $CLASS {
+            mat: [[$NUM; $SZ]; $SZ],
+        }
+        #[cfg(target_family = "wasm")]
+        #[wasm_bindgen]
+        impl $CLASS {
+            #[wasm_bindgen(js_name = identity)]
+            pub fn widentity() -> $CLASS {
+                Self::from_matrix(&matrices::identity::<$NUM>($SZ))
+            }
+            #[wasm_bindgen(js_name = scale)]
+            pub fn wscale_vector(vec: &$VEC) -> $CLASS {
+                Self::from_matrix(&matrices::scale_vector::<$NUM, $VEC>(vec))
+            }
+            #[wasm_bindgen(constructor)]
+            pub fn wfrom_flat(arr: &[$NUM]) -> $CLASS {
+                Self::from_flat(arr, $SZ, $SZ)
+            }
+            #[wasm_bindgen(js_name = print)]
+            pub fn wprint(&self) {
+                js_log_string(&format!("{:?}", self));
+            }
+            #[wasm_bindgen(js_name = copy)]
+            pub fn wcopy(&self) -> $CLASS {
+                self.cm_copy()
+            }
+            #[wasm_bindgen(js_name = getWidth)]
+            pub fn wget_width(&self) -> f64 {
+                self.get_width() as f64
+            }
+            #[wasm_bindgen(js_name = getHeight)]
+            pub fn wget_height(&self) -> f64 {
+                self.get_height() as f64
+            }
+            #[wasm_bindgen(js_name = getSize)]
+            pub fn wget_size(&self) -> f64 {
+                self.get_size() as f64
+            }
+            #[wasm_bindgen(js_name = f64At)]
+            pub fn wget_elem_f64(&self, y: f64, x: f64) -> f64 {
+                *self.get_value_ref(y as usize, x as usize) as f64
+            }
+            #[wasm_bindgen(js_name = f32At)]
+            pub fn wget_elem_f32(&self, y: f64, x: f64) -> f32 {
+                *self.get_value_ref(y as usize, x as usize) as f32
+            }
+            #[wasm_bindgen(js_name = i64At)]
+            pub fn wget_elem_i64(&self, y: f64, x: f64) -> i64 {
+                *self.get_value_ref(y as usize, x as usize) as i64
+            }
+            #[wasm_bindgen(js_name = i32At)]
+            pub fn wget_elem_i32(&self, y: f64, x: f64) -> i32 {
+                *self.get_value_ref(y as usize, x as usize) as i32
+            }
+            #[wasm_bindgen(js_name = isSquare)]
+            pub fn wis_square(&self) -> bool {
+                self.is_square()
+            }
+            #[wasm_bindgen(js_name = getColVec)]
+            pub fn wget_col_vec(&self, index: f64) -> $VEC {
+                $VEC::new_arr(&self.get_col_vec(index as usize))
+            }
+            #[wasm_bindgen(js_name = getRowVec)]
+            pub fn wget_row_vec(&self, index: f64) -> $VEC {
+                $VEC::new_arr(&self.get_row_vec(index as usize))
+            }
+            #[wasm_bindgen(js_name = mulMat)]
+            pub fn wmul_mat(&self, o: &$CLASS) -> $CLASS {
+                self.mul_mat(o)
+            }
+            #[wasm_bindgen(js_name = mulRowVec)]
+            pub fn wmul_row_vec(&self, o: &$VEC) -> $VEC {
+                self.mul_row_vec(o)
+            }
+            #[wasm_bindgen(js_name = mulColVec)]
+            pub fn wmul_col_vec(&self, o: &$VEC) -> $VEC {
+                self.mul_col_vec(o)
+            }
+            #[wasm_bindgen(js_name = mulNum)]
+            pub fn wmul_num(&self, o: f64) -> $CLASS {
+                self.mul_num(o as $NUM)
+            }
+            #[wasm_bindgen(js_name = divNum)]
+            pub fn wdiv_num(&self, o: f64) -> $CLASS {
+                self.div_num(o as $NUM)
+            }
+            #[wasm_bindgen(js_name = addNum)]
+            pub fn wadd_num(&self, o: f64) -> $CLASS {
+                self.add_num(o as $NUM)
+            }
+            #[wasm_bindgen(js_name = subNum)]
+            pub fn wsub_num(&self, o: f64) -> $CLASS {
+                self.sub_num(o as $NUM)
+            }
+            #[wasm_bindgen(js_name = adjoint)]
+            pub fn wadjoint(&self) -> $CLASS {
+                self.adjoint()
+            }
+            #[wasm_bindgen(js_name = inverse)]
+            pub fn winverse(&self) -> $CLASS {
+                self.inverse()
+            }
+            #[wasm_bindgen(js_name = determinant)]
+            pub fn wdeterminant(&self) -> f64 {
+                self.determinant() as f64
+            }
+            #[wasm_bindgen(js_name = toString)]
+            pub fn wto_string(&self) -> String {
+                format!("{:?}", self).into()
+            }
+        }
+        impl CharMathCopy<$CLASS> for $CLASS {
+            fn cm_copy(&self) -> $CLASS {
+                $CLASS { mat: self.mat }
+            }
+        }
+        impl Index<usize> for $CLASS {
+            type Output = [$NUM; $SZ];
+            fn index(&self, i: usize) -> &Self::Output {
+                &self.mat[i]
+            }
+        }
+        impl IndexMut<usize> for $CLASS {
+            fn index_mut(&mut self, i: usize) -> &mut Self::Output {
+                &mut self.mat[i]
+            }
+        }
+        impl MatrixBase<$NUM> for $CLASS {
+            fn get_width(&self) -> usize {
+                $SZ as usize
+            }
+            fn get_height(&self) -> usize {
+                $SZ as usize
+            }
+            fn get_value_ref(&self, h: usize, w: usize) -> &$NUM {
+                &self.mat[h][w]
+            }
+            fn get_value_ref_mut(&mut self, h: usize, w: usize) -> &mut $NUM {
+                &mut self.mat[h][w]
+            }
+        }
+        impl Matrix<$NUM, Self> for $CLASS {
+            fn from_vec(vec: Vec<Vec<$NUM>>) -> Self {
+                assert!(vec.len() == $SZ, "Input vec height incompatible.");
+                let mut internal_vec = [[$NUM::zero(); $SZ]; $SZ];
+                for i in 0..vec.len() {
+                    assert!(vec[i].len() == 2, "Input vec width incompatible.");
+                    for j in 0..vec[i].len() {
+                        internal_vec[i][j] = vec[i][j];
+                    }
+                }
+                $CLASS { mat: internal_vec }
+            }
+            fn from_flat(arr: &[$NUM], h: usize, w: usize) -> Self {
+                assert!(h == $SZ && w == $SZ, "Matrix size incompatible.");
+                let mut internal_vec = [[$NUM::zero(); $SZ]; $SZ];
+                for i in 0..h {
+                    for j in 0..w {
+                        if (i * w + j) < arr.len() {
+                            internal_vec[i][j] = arr[i * w + j];
+                        } else {
+                            internal_vec[i][j] = $NUM::zero();
+                        }
+                    }
+                }
+                $CLASS { mat: internal_vec }
+            }
+        }
+        impl SquareMatrix<$NUM, $CLASS> for $CLASS {}
+    };
+}
+macro_rules! gen_wasm_sq_mat4 {
+    ($CLASS:ident, $NUM:ident, $VEC:ident, $SVEC:ident, $QUA:ident) => {
+        gen_wasm_square_matrix!($CLASS, $NUM, 4, $VEC);
+        #[cfg(target_family = "wasm")]
+        #[wasm_bindgen]
+        impl $CLASS {
+            #[wasm_bindgen(js_name = translation)]
+            pub fn wtranslation(vec: &$SVEC) -> $CLASS {
+                $CLASS::from_matrix(&matrices::translation_3d::<$NUM, $SVEC>(vec))
+            }
+            #[wasm_bindgen(js_name = rotationEuler)]
+            pub fn wrotation_euler(vec: &$SVEC) -> $CLASS {
+                $CLASS::from_matrix(&matrices::rotation_euler::<$NUM, $SVEC>(vec))
+            }
+            #[wasm_bindgen(js_name = rotationQuaternion)]
+            pub fn wrotation_quaternion(q: &$QUA) -> $CLASS {
+                $CLASS::from_matrix(&matrices::rotation_quaternion_num::<$NUM>(
+                    q.get_x(),
+                    q.get_y(),
+                    q.get_z(),
+                    q.get_w(),
+                ))
+            }
+            #[wasm_bindgen(js_name = lookAt)]
+            pub fn wlook_at(pos: &$SVEC, target: &$SVEC, up: &$SVEC) -> $CLASS {
+                $CLASS::from_matrix(&matrices::look_at_3d::<$NUM, $SVEC>(pos, target, up))
+            }
+            #[wasm_bindgen(js_name = perspective)]
+            pub fn wperspective(fov: f64, aspect: f64, near: f64, far: f64) -> $CLASS {
+                $CLASS::from_matrix(&matrices::perspective::<$NUM>(
+                    fov as $NUM,
+                    aspect as $NUM,
+                    near as $NUM,
+                    far as $NUM,
+                ))
+            }
+        }
+    };
+}
+macro_rules! gen_wasm_sq_mat2 {
+    ($CLASS:ident, $NUM:ident, $VEC:ident) => {
+        gen_wasm_square_matrix!($CLASS, $NUM, 2, $VEC);
+        #[cfg(target_family = "wasm")]
+        #[wasm_bindgen]
+        impl $CLASS {
+            #[wasm_bindgen(js_name = rotation)]
+            pub fn wrotation_2d(num: f64) -> $CLASS {
+                $CLASS::from_matrix(&matrices::rotation_2d::<$NUM>(num as $NUM))
+            }
+        }
+    };
+}
+
+#[cfg(target_family = "wasm")]
+use crate::linear::quaternion::{Quaternionf32, Quaternionf64, Quaternioni32, Quaternioni64};
+#[cfg(target_family = "wasm")]
+use crate::linear::vector::Vec4;
+
+gen_wasm_sq_mat4!(Mat4f64, f64, Vec4f64, Vec3f64, Quaternionf64);
+gen_wasm_sq_mat4!(Mat4f32, f32, Vec4f32, Vec3f32, Quaternionf32);
+gen_wasm_sq_mat4!(Mat4i64, i64, Vec4i64, Vec3i64, Quaternioni64);
+gen_wasm_sq_mat4!(Mat4i32, i32, Vec4i32, Vec3i32, Quaternioni32);
+
+gen_wasm_square_matrix!(Mat3f64, f64, 3, Vec3f64);
+gen_wasm_square_matrix!(Mat3f32, f32, 3, Vec3f32);
+gen_wasm_square_matrix!(Mat3i64, i64, 3, Vec3i64);
+gen_wasm_square_matrix!(Mat3i32, i32, 3, Vec3i32);
+
+gen_wasm_sq_mat2!(Mat2f64, f64, Vec2f64);
+gen_wasm_sq_mat2!(Mat2f32, f32, Vec2f32);
+gen_wasm_sq_mat2!(Mat2i64, i64, Vec2i64);
+gen_wasm_sq_mat2!(Mat2i32, i32, Vec2i32);

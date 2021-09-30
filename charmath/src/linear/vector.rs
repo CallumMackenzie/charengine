@@ -145,29 +145,102 @@ macro_rules! vector_def {
     };
 }
 macro_rules! define_vec {
-    ($NAME:ident, $NUM:ident, $LEN:expr) => {
+    ($CLASS:ident, $NUM:ident, $LEN:expr) => {
         #[cfg_attr(target_family = "wasm", wasm_bindgen)]
         #[derive(Debug)]
-        pub struct $NAME {
+        pub struct $CLASS {
             vec: [$NUM; $LEN],
         }
-        #[cfg_attr(target_family = "wasm", wasm_bindgen)]
-        impl $NAME {
-            pub fn i64_val_at(&self, i: i64) -> i64 {
+        #[cfg(target_family = "wasm")]
+        #[wasm_bindgen]
+        impl $CLASS {
+            #[wasm_bindgen(js_name = i64At)]
+            pub fn wi64_val_at(&self, i: i64) -> i64 {
                 self.vec[i as usize] as i64
             }
-            pub fn f64_val_at(&self, i: i64) -> f64 {
+            #[wasm_bindgen(js_name = f64At)]
+            pub fn wf64_val_at(&self, i: i64) -> f64 {
                 self.vec[i as usize] as f64
             }
-            pub fn i32_val_at(&self, i: i64) -> i32 {
+            #[wasm_bindgen(js_name = i32At)]
+            pub fn wi32_val_at(&self, i: i64) -> i32 {
                 self.vec[i as usize] as i32
             }
-            pub fn f32_val_at(&self, i: i64) -> f32 {
+            #[wasm_bindgen(js_name = f32At)]
+            pub fn wf32_val_at(&self, i: i64) -> f32 {
                 self.vec[i as usize] as f32
             }
+            #[wasm_bindgen(js_name = toString)]
+            pub fn wto_string(&self) -> String {
+                format!("{:?}", self).into()
+            }
+            #[wasm_bindgen(js_name = print)]
+            pub fn wprint(&self) {
+                js_log_string(&format!("{:?}", self));
+            }
+            #[wasm_bindgen(js_name = len)]
+            pub fn wlen(&self) -> f64 {
+                self.len() as f64
+            }
+            #[wasm_bindgen(js_name = nElems)]
+            pub fn wn_elems(&self) -> f64 {
+                self.n_elems() as f64
+            }
+            #[wasm_bindgen(js_name = copy)]
+            pub fn wcopy(&self) -> $CLASS {
+                self.cm_copy()
+            }
+            #[wasm_bindgen(js_name = dot)]
+            pub fn wdot(&self, o: &$CLASS) -> f64 {
+                self.dot(o) as f64
+            }
+            #[wasm_bindgen(js_name = mulVec)]
+            pub fn wmul_vec(&self, o: &$CLASS) -> $CLASS {
+                self.mul_vec(o)
+            }
+            #[wasm_bindgen(js_name = addVec)]
+            pub fn wadd_vec(&self, o: &$CLASS) -> $CLASS {
+                self.add_vec(o)
+            }
+            #[wasm_bindgen(js_name = divVec)]
+            pub fn wdiv_vec(&self, o: &$CLASS) -> $CLASS {
+                self.div_vec(o)
+            }
+            #[wasm_bindgen(js_name = subVec)]
+            pub fn wsub_vec(&self, o: &$CLASS) -> $CLASS {
+                self.sub_vec(o)
+            }
+            #[wasm_bindgen(js_name = set)]
+            pub fn wset(&mut self, o: &$CLASS) {
+                self.set(o);
+            }
+            #[wasm_bindgen(js_name = mulNum)]
+            pub fn wmul_num(&self, o: f64) -> $CLASS {
+                self.mul_num(o as $NUM)
+            }
+            #[wasm_bindgen(js_name = addNum)]
+            pub fn wadd_num(&self, o: f64) -> $CLASS {
+                self.add_num(o as $NUM)
+            }
+            #[wasm_bindgen(js_name = divNum)]
+            pub fn wdiv_num(&self, o: f64) -> $CLASS {
+                self.div_num(o as $NUM)
+            }
+            #[wasm_bindgen(js_name = subNum)]
+            pub fn wsub_num(&self, o: f64) -> $CLASS {
+                self.sub_num(o as $NUM)
+            }
+            #[wasm_bindgen(js_name = normalized)]
+            pub fn wnormalized(&self) -> $CLASS {
+                self.normalized()
+            }
+            #[wasm_bindgen(js_name = normalize)]
+            pub fn wnormalize(&mut self) {
+                self.normalize();
+            }
         }
-        vector_def!($NAME, $NUM, $LEN);
-        vec_op_overload!($NAME, $NUM);
+        vector_def!($CLASS, $NUM, $LEN);
+        vec_op_overload!($CLASS, $NUM);
     };
 }
 macro_rules! define_vec2 {
@@ -178,76 +251,28 @@ macro_rules! define_vec2 {
                 $CLASS { vec: [x, y] }
             }
         }
-        #[cfg_attr(target_family = "wasm", wasm_bindgen)]
+        #[cfg(target_family = "wasm")]
+        #[wasm_bindgen]
         impl $CLASS {
-            #[cfg_attr(target_family = "wasm", wasm_bindgen(constructor))]
+            #[wasm_bindgen(constructor)]
             pub fn wnew(x: f64, y: f64) -> $CLASS {
                 Self::new(x as $NUM, y as $NUM)
             }
+            #[wasm_bindgen(js_name = getX)]
             pub fn wget_x(&self) -> f64 {
                 self.get_x() as f64
             }
+            #[wasm_bindgen(js_name = getY)]
             pub fn wget_y(&self) -> f64 {
                 self.get_y() as f64
             }
+            #[wasm_bindgen(js_name = setX)]
             pub fn wset_x(&mut self, n: f64) {
                 self.set_x(n as $NUM);
             }
+            #[wasm_bindgen(js_name = setY)]
             pub fn wset_y(&mut self, n: f64) {
                 self.set_y(n as $NUM);
-            }
-            #[cfg(target_family = "wasm")]
-            pub fn print(&self) {
-                js_log_string(&format!("{:?}", self));
-            }
-            #[cfg(not(target_family = "wasm"))]
-            pub fn print(&self) {
-                print!("{:?}", self);
-            }
-            pub fn wlen(&self) -> f64 {
-                self.len() as f64
-            }
-            pub fn wn_elems(&self) -> f64 {
-                self.n_elems() as f64
-            }
-            pub fn wcopy(&self) -> $CLASS {
-                self.cm_copy()
-            }
-            pub fn wdot(&self, o: &$CLASS) -> f64 {
-                self.dot(o) as f64
-            }
-            pub fn wmul_vec(&self, o: &$CLASS) -> $CLASS {
-                self.mul_vec(o)
-            }
-            pub fn wadd_vec(&self, o: &$CLASS) -> $CLASS {
-                self.add_vec(o)
-            }
-            pub fn wdiv_vec(&self, o: &$CLASS) -> $CLASS {
-                self.div_vec(o)
-            }
-            pub fn wsub_vec(&self, o: &$CLASS) -> $CLASS {
-                self.sub_vec(o)
-            }
-            pub fn wset(&mut self, o: &$CLASS) {
-                self.set(o);
-            }
-            pub fn wmul_num(&self, o: f64) -> $CLASS {
-                self.mul_num(o as $NUM)
-            }
-            pub fn wadd_num(&self, o: f64) -> $CLASS {
-                self.add_num(o as $NUM)
-            }
-            pub fn wdiv_num(&self, o: f64) -> $CLASS {
-                self.div_num(o as $NUM)
-            }
-            pub fn wsub_num(&self, o: f64) -> $CLASS {
-                self.sub_num(o as $NUM)
-            }
-            pub fn wnormalized(&self) -> $CLASS {
-                self.normalized()
-            }
-            pub fn wnormalize(&mut self) {
-                self.normalize();
             }
         }
     };
@@ -260,82 +285,40 @@ macro_rules! define_vec3 {
                 $CLASS { vec: [x, y, z] }
             }
         }
-        #[cfg_attr(target_family = "wasm", wasm_bindgen)]
+        #[cfg(target_family = "wasm")]
+        #[wasm_bindgen]
         impl $CLASS {
-            #[cfg_attr(target_family = "wasm", wasm_bindgen(constructor))]
+            #[wasm_bindgen(constructor)]
             pub fn wnew(x: f64, y: f64, z: f64) -> $CLASS {
                 Self::new(x as $NUM, y as $NUM, z as $NUM)
             }
+            #[wasm_bindgen(js_name = getX)]
             pub fn wget_x(&self) -> f64 {
                 self.get_x() as f64
             }
+            #[wasm_bindgen(js_name = getY)]
             pub fn wget_y(&self) -> f64 {
                 self.get_y() as f64
             }
+            #[wasm_bindgen(js_name = getZ)]
             pub fn wget_z(&self) -> f64 {
                 self.get_z() as f64
             }
+            #[wasm_bindgen(js_name = setX)]
             pub fn wset_x(&mut self, n: f64) {
                 self.set_x(n as $NUM);
             }
+            #[wasm_bindgen(js_name = setY)]
             pub fn wset_y(&mut self, n: f64) {
                 self.set_y(n as $NUM);
             }
+            #[wasm_bindgen(js_name = setZ)]
             pub fn wset_z(&mut self, n: f64) {
                 self.set_z(n as $NUM)
             }
-            #[cfg(target_family = "wasm")]
-            pub fn print(&self) {
-                js_log_string(&format!("{:?}", self));
-            }
-            #[cfg(not(target_family = "wasm"))]
-            pub fn print(&self) {
-                print!("{:?}", self);
-            }
-            pub fn wlen(&self) -> f64 {
-                self.len() as f64
-            }
-            pub fn wn_elems(&self) -> f64 {
-                self.n_elems() as f64
-            }
-            pub fn wcopy(&self) -> $CLASS {
-                self.cm_copy()
-            }
-            pub fn wdot(&self, o: &$CLASS) -> f64 {
-                self.dot(o) as f64
-            }
-            pub fn wmul_vec(&self, o: &$CLASS) -> $CLASS {
-                self.mul_vec(o)
-            }
-            pub fn wadd_vec(&self, o: &$CLASS) -> $CLASS {
-                self.add_vec(o)
-            }
-            pub fn wdiv_vec(&self, o: &$CLASS) -> $CLASS {
-                self.div_vec(o)
-            }
-            pub fn wsub_vec(&self, o: &$CLASS) -> $CLASS {
-                self.sub_vec(o)
-            }
-            pub fn wset(&mut self, o: &$CLASS) {
-                self.set(o);
-            }
-            pub fn wmul_num(&self, o: f64) -> $CLASS {
-                self.mul_num(o as $NUM)
-            }
-            pub fn wadd_num(&self, o: f64) -> $CLASS {
-                self.add_num(o as $NUM)
-            }
-            pub fn wdiv_num(&self, o: f64) -> $CLASS {
-                self.div_num(o as $NUM)
-            }
-            pub fn wsub_num(&self, o: f64) -> $CLASS {
-                self.sub_num(o as $NUM)
-            }
-            pub fn wnormalized(&self) -> $CLASS {
-                self.normalized()
-            }
-            pub fn wnormalize(&mut self) {
-                self.normalize();
+            #[wasm_bindgen(js_name = cross)]
+            pub fn wcross(&self, o: &$CLASS) -> $CLASS {
+                self.cross(o)
             }
         }
     };
@@ -348,88 +331,44 @@ macro_rules! define_vec4 {
                 $CLASS { vec: [x, y, z, w] }
             }
         }
-        #[cfg_attr(target_family = "wasm", wasm_bindgen)]
+        #[cfg(target_family = "wasm")]
+        #[wasm_bindgen]
         impl $CLASS {
-            #[cfg_attr(target_family = "wasm", wasm_bindgen(constructor))]
+            #[wasm_bindgen(constructor)]
             pub fn wnew(x: f64, y: f64, z: f64, w: f64) -> $CLASS {
                 Self::new(x as $NUM, y as $NUM, z as $NUM, w as $NUM)
             }
+            #[wasm_bindgen(js_name = getX)]
             pub fn wget_x(&self) -> f64 {
                 self.get_x() as f64
             }
+            #[wasm_bindgen(js_name = getY)]
             pub fn wget_y(&self) -> f64 {
                 self.get_y() as f64
             }
+            #[wasm_bindgen(js_name = getZ)]
             pub fn wget_z(&self) -> f64 {
                 self.get_z() as f64
             }
+            #[wasm_bindgen(js_name = getW)]
             pub fn wget_w(&self) -> f64 {
                 self.get_w() as f64
             }
+            #[wasm_bindgen(js_name = setX)]
             pub fn wset_x(&mut self, n: f64) {
                 self.set_x(n as $NUM);
             }
+            #[wasm_bindgen(js_name = setY)]
             pub fn wset_y(&mut self, n: f64) {
                 self.set_y(n as $NUM);
             }
+            #[wasm_bindgen(js_name = setZ)]
             pub fn wset_z(&mut self, n: f64) {
                 self.set_z(n as $NUM)
             }
+            #[wasm_bindgen(js_name = setW)]
             pub fn wset_w(&mut self, n: f64) {
                 self.set_w(n as $NUM);
-            }
-            #[cfg(target_family = "wasm")]
-            pub fn print(&self) {
-                js_log_string(&format!("{:?}", self));
-            }
-            #[cfg(not(target_family = "wasm"))]
-            pub fn print(&self) {
-                print!("{:?}", self);
-            }
-            pub fn wlen(&self) -> f64 {
-                self.len() as f64
-            }
-            pub fn wn_elems(&self) -> f64 {
-                self.n_elems() as f64
-            }
-            pub fn wcopy(&self) -> $CLASS {
-                self.cm_copy()
-            }
-            pub fn wdot(&self, o: &$CLASS) -> f64 {
-                self.dot(o) as f64
-            }
-            pub fn wmul_vec(&self, o: &$CLASS) -> $CLASS {
-                self.mul_vec(o)
-            }
-            pub fn wadd_vec(&self, o: &$CLASS) -> $CLASS {
-                self.add_vec(o)
-            }
-            pub fn wdiv_vec(&self, o: &$CLASS) -> $CLASS {
-                self.div_vec(o)
-            }
-            pub fn wsub_vec(&self, o: &$CLASS) -> $CLASS {
-                self.sub_vec(o)
-            }
-            pub fn wset(&mut self, o: &$CLASS) {
-                self.set(o);
-            }
-            pub fn wmul_num(&self, o: f64) -> $CLASS {
-                self.mul_num(o as $NUM)
-            }
-            pub fn wadd_num(&self, o: f64) -> $CLASS {
-                self.add_num(o as $NUM)
-            }
-            pub fn wdiv_num(&self, o: f64) -> $CLASS {
-                self.div_num(o as $NUM)
-            }
-            pub fn wsub_num(&self, o: f64) -> $CLASS {
-                self.sub_num(o as $NUM)
-            }
-            pub fn wnormalized(&self) -> $CLASS {
-                self.normalized()
-            }
-            pub fn wnormalize(&mut self) {
-                self.normalize();
             }
         }
     };
@@ -463,13 +402,10 @@ pub trait VectorBase<NUM: CharMathNumeric<NUM>> {
 }
 
 pub trait Vector<NUM: Copy + Algebraic<NUM, NUM> + CharMathNumeric<NUM>, VEC: Vector<NUM, VEC>>:
-    CharMathCopy<VEC>
-    + VectorBase<NUM>
-    + Index<usize, Output = NUM>
-    + IndexMut<usize, Output = NUM>
-    + Algebraic<VEC, VEC>
-    + Algebraic<NUM, VEC>
-    + AlgebraicAssignable<VEC>
+    CharMathCopy<VEC> + VectorBase<NUM> + Index<usize, Output = NUM> + IndexMut<usize, Output = NUM>
+// + Algebraic<VEC, VEC>
+// + Algebraic<NUM, VEC>
+// + AlgebraicAssignable<VEC>
 {
     fn new_arr(arr: &[NUM]) -> VEC;
 
@@ -607,7 +543,7 @@ pub mod vector_utils {
     pub fn array_cross<T: crate::numeric::CharMathNumeric<T>>(a: &[T], b: &[T]) -> Vec<T> {
         assert!(
             a.len() == 3 && b.len() == 3,
-            "Input array lengths must be 3."
+            "Input array lengths must be 3.",
         );
         let mut ret = Vec::<T>::with_capacity(3);
         ret.push(a[1] * b[2] - a[2] * b[1]);
