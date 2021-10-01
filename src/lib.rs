@@ -1,9 +1,17 @@
-#[cfg(test)]
+#[cfg(any(test, target_family = "wasm"))]
 mod tests {
     use charmath::linear::matrix::*;
     use charmath::linear::quaternion::*;
     use charmath::linear::vector::*;
+    use charwin::window::{
+        AbstractWindow, AbstractWindowFactory, PlatformWindow, WindowCreateArgs, WindowSizeMode,
+    };
+    use charwin::{AppLogic, AppState};
 
+    #[cfg(target_family = "wasm")]
+    use wasm_bindgen::prelude::*;
+
+    #[cfg(not(target_family = "wasm"))]
     #[test]
     fn vec2_create() {
         let a_x = 3.3;
@@ -19,6 +27,7 @@ mod tests {
         assert_eq!(a.len(), a_len, "Vec2D arr len wrong.");
     }
 
+    #[cfg(not(target_family = "wasm"))]
     #[test]
     fn vec2_math() {
         let (a_x, a_y) = (1223.3233, 883.323219);
@@ -55,6 +64,7 @@ mod tests {
         assert_eq!(a.div_vec(&b).get_y(), a_y / b_y, "Div vec y wrong");
     }
 
+    #[cfg(not(target_family = "wasm"))]
     #[test]
     fn generc_matrix_create() {
         let mat_arr = [1.0, 9.0, 3.3, 0.2, 1.4, 3.41];
@@ -65,6 +75,7 @@ mod tests {
         assert_eq!(mat.get_height(), mat_h, "Matrix height wrong.");
     }
 
+    #[cfg(not(target_family = "wasm"))]
     #[test]
     fn matrices() {
         let t3d = matrices::translation_3d::<f64, Vec3D>(&Vec3D::new(2f64, 3f64, 8f64));
@@ -92,5 +103,52 @@ mod tests {
         println!("Quaternion: {:?}", a);
         println!("Rotation matrix: {:?}", b);
         println!("New unit vector pos: {:?}", c);
+    }
+
+    struct App {
+        win: Option<PlatformWindow>,
+        ctr: f64,
+    }
+    impl AppLogic for App {
+        fn on_start(&mut self) -> AppState {
+            self.win = Some(PlatformWindow::create(&WindowCreateArgs::new(
+                "CharEngine".into(),
+                400,
+                400,
+                WindowSizeMode::Windowed,
+            )));
+            AppState::Ok
+        }
+        fn on_update(&mut self) -> AppState {
+            let win = self.win.as_mut().unwrap();
+            if win.should_close() {
+                AppState::Exit
+            } else {
+                win.clear();
+                win.swap_buffers();
+                win.poll_events();
+                self.ctr += 0.05;
+                if self.ctr >= 1.0 {
+                    self.ctr = 0.0;
+                }
+                win.set_clear_colour(self.ctr, self.ctr, self.ctr, 1.0);
+                AppState::Ok
+            }
+        }
+        fn on_close(&mut self) -> AppState {
+            AppState::Ok
+        }
+    }
+
+    #[cfg_attr(not(target_family = "wasm"), test)]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = startApp))]
+    pub fn native_window_tests() {
+        static mut APP: App = App {
+            win: None,
+            ctr: 0f64,
+        };
+        unsafe {
+            charwin::start(&mut APP);
+        }
     }
 }
