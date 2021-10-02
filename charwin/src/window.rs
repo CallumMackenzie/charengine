@@ -3,11 +3,6 @@ pub mod opengl_window;
 #[cfg(target_family = "wasm")]
 pub mod webgl_window;
 
-#[cfg(not(target_family = "wasm"))]
-pub type PlatformWindow = crate::window::opengl_window::NativeGlWindow;
-#[cfg(target_family = "wasm")]
-pub type PlatformWindow = crate::window::webgl_window::WebGlWindow;
-
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
@@ -36,6 +31,7 @@ impl WindowCreateArgs {
     pub fn wto_string(&self) -> String {
         format!("{:?}", self).into()
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(constructor))]
     pub fn new(title: String, width: u32, height: u32, mode: WindowSizeMode) -> Self {
         WindowCreateArgs {
             title,

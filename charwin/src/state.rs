@@ -1,9 +1,9 @@
-use crate::window::PlatformWindow;
+use crate::platform::Window;
 
 pub trait State: 'static {
-    fn initialize(&mut self, win: &mut PlatformWindow) -> i32;
-    fn update(&mut self, win: &mut PlatformWindow, delta: f64) -> i32;
-    fn destroy(&mut self, win: &mut PlatformWindow, exit_code: i32);
+    fn initialize(&mut self, win: &mut Window) -> i32;
+    fn update(&mut self, win: &mut Window, delta: f64) -> i32;
+    fn destroy(&mut self, win: &mut Window, exit_code: i32);
 }
 
 #[cfg(not(target_family = "wasm"))]

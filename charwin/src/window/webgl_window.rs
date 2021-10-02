@@ -7,6 +7,12 @@ use wasm_bindgen::JsCast;
 use web_sys::WebGl2RenderingContext;
 
 #[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console, js_name = log)]
+    fn js_log_string(a: &str);
+}
+
+#[wasm_bindgen]
 pub struct WebGlWindow {
     context: WebGl2RenderingContext,
     clear_mask: u32,
@@ -18,24 +24,16 @@ impl WebGlWindow {
     pub fn wcreate(args: &WindowCreateArgs) -> Self {
         Self::create(args)
     }
+    #[wasm_bindgen(js_name = setClearColour)]
+    pub fn wset_clear_colour(&mut self, r: f64, g: f64, b: f64, a: f64) {
+        self.set_clear_colour(r, g, b, a);
+    }
+    #[wasm_bindgen(js_name = clear)]
+    pub fn wclear(&mut self) {
+        self.clear();
+    }
 }
 
-/*
-if !state_initialized {
-    state.initialize(&mut self);
-    state_initialized = true;
-}
-let update_res = state.update(&mut self, (js_sys::Date::now() - last_frame) / 1000f64);
-if update_res == 0 {
-    last_frame = js_sys::Date::now();
-    let _ = web_sys::window()
-        .unwrap()
-        .request_animation_frame(g.borrow().as_ref().unwrap().as_ref().unchecked_ref());
-} else {
-    state.destroy(&mut self, update_res);
-    let _ = f.borrow_mut().take();
-}
-*/
 impl WebGlWindow {
     pub fn render_loop<S: State>(mut self, mut state: S) {
         if let Some(_) = web_sys::window() {
@@ -46,6 +44,7 @@ impl WebGlWindow {
             *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
                 if !state_initialized {
                     state.initialize(&mut self);
+                    js_log_string("State initialized.");
                     state_initialized = true;
                 }
                 let update_res =
@@ -57,6 +56,7 @@ impl WebGlWindow {
                     );
                 } else {
                     state.destroy(&mut self, update_res);
+                    js_log_string("State destroyed.");
                     let _ = f.borrow_mut().take();
                 }
             }) as Box<dyn FnMut()>));
