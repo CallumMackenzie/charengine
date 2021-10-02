@@ -5,6 +5,7 @@ use glfw::{
 
 extern crate gl;
 use crate::input::{Key, MouseButton};
+use crate::state::{FrameManager, State};
 use crate::window::{
     AbstractWindow, AbstractWindowFactory, WindowCreateArgs, WindowEvent, WindowSizeMode,
 };
@@ -15,6 +16,27 @@ pub struct NativeGlWindow {
     window: GlfwWindow,
     events: std::sync::mpsc::Receiver<(f64, GlWindowEvent)>,
     clear_mask: GLenum,
+}
+
+impl NativeGlWindow {
+    pub fn render_loop<S: State>(mut self, mut state: S) {
+        let mut fm = FrameManager::new(60f64);
+        let mut state_res = state.initialize(&mut self);
+        if state_res == 0 {
+            println!("State initialized.");
+            loop {
+                if fm.next_frame_ready() {
+                    let update_res = state.update(&mut self, fm.get_delta());
+                    if update_res != 0 {
+                        state_res = update_res;
+                        break;
+                    }
+                }
+            }
+        }
+        state.destroy(&mut self, state_res);
+        println!("State destroyed.");
+    }
 }
 
 impl AbstractWindow for NativeGlWindow {

@@ -1,4 +1,7 @@
+use crate::state::State;
 use crate::window::{AbstractWindow, AbstractWindowFactory, WindowCreateArgs, WindowEvent};
+use std::cell::RefCell;
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::WebGl2RenderingContext;
@@ -14,6 +17,54 @@ impl WebGlWindow {
     #[wasm_bindgen(constructor)]
     pub fn wcreate(args: &WindowCreateArgs) -> Self {
         Self::create(args)
+    }
+}
+
+/*
+if !state_initialized {
+    state.initialize(&mut self);
+    state_initialized = true;
+}
+let update_res = state.update(&mut self, (js_sys::Date::now() - last_frame) / 1000f64);
+if update_res == 0 {
+    last_frame = js_sys::Date::now();
+    let _ = web_sys::window()
+        .unwrap()
+        .request_animation_frame(g.borrow().as_ref().unwrap().as_ref().unchecked_ref());
+} else {
+    state.destroy(&mut self, update_res);
+    let _ = f.borrow_mut().take();
+}
+*/
+impl WebGlWindow {
+    pub fn render_loop<S: State>(mut self, mut state: S) {
+        if let Some(_) = web_sys::window() {
+            let f = Rc::new(RefCell::new(None));
+            let g: Rc<RefCell<Option<Closure<_>>>> = f.clone();
+            let mut state_initialized = false;
+            let mut last_frame = js_sys::Date::now();
+            *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+                if !state_initialized {
+                    state.initialize(&mut self);
+                    state_initialized = true;
+                }
+                let update_res =
+                    state.update(&mut self, (js_sys::Date::now() - last_frame) / 1000f64);
+                if update_res == 0 {
+                    last_frame = js_sys::Date::now();
+                    let _ = web_sys::window().unwrap().request_animation_frame(
+                        f.borrow().as_ref().unwrap().as_ref().unchecked_ref(),
+                    );
+                } else {
+                    state.destroy(&mut self, update_res);
+                    let _ = f.borrow_mut().take();
+                }
+            }) as Box<dyn FnMut()>));
+
+            let _ = web_sys::window()
+                .unwrap()
+                .request_animation_frame(g.borrow().as_ref().unwrap().as_ref().unchecked_ref());
+        }
     }
 }
 
