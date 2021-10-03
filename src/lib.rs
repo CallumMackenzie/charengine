@@ -1,15 +1,19 @@
 #[cfg(any(test, target_family = "wasm"))]
 mod tests {
-    use charwin::input::Key;
-    use charwin::platform::{dbg_log, Window};
-    use charwin::state::State;
-    use charwin::window::{
-        AbstractWindow, AbstractWindowFactory, DefaultEventManager, EventManager, WindowCreateArgs,
-        WindowSizeMode,
-    };
+	use charwin::*;
+	use charwin::state::*;
+    use charwin::input::*;
+    use charwin::window::*;
+	use charwin::platform::*;
+	use charmath::*;
+	use charmath::linear::*;
+	use charmath::numeric::*;
+	use charmath::linear::matrix::*;
+	use charmath::linear::vector::*;
+	use charmath::linear::quaternion::*;
 
     #[cfg(target_family = "wasm")]
-    use wasm_bindgen::prelude::*;
+	use wasm_bindgen::prelude::*;
 
     pub struct App {
         ctr: f64,
@@ -67,7 +71,7 @@ mod tests {
             "CharEngine".into(),
             400,
             400,
-            WindowSizeMode::Fullscreen,
+            WindowSizeMode::Windowed,
         ));
         window.render_loop(app, manager);
     }
