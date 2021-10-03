@@ -17,7 +17,7 @@ js-sys = "0.3.55"
 glfw = "0.42.0"
 gl = "0.14.0"
 
-[dependencies.web-sys]
+[target.'cfg(target_family = "wasm")'.dependencies.web-sys]
 version = "0.3.4"
 features = [
   'Document',
@@ -29,4 +29,11 @@ features = [
   'WebGlProgram',
   'WebGlShader',
   'Window',
+  'EventListener',
+  'Event',
+  'KeyboardEvent',
+  'MouseEvent',
+  'FocusEvent',
+  'WheelEvent',
+  'DomRect',
 ]

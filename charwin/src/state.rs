@@ -1,9 +1,10 @@
 use crate::platform::Window;
+use crate::window::EventManager;
 
 pub trait State: 'static {
-    fn initialize(&mut self, win: &mut Window) -> i32;
-    fn update(&mut self, win: &mut Window, delta: f64) -> i32;
-    fn destroy(&mut self, win: &mut Window, exit_code: i32);
+    fn initialize(&mut self, win: &mut Window, manager: &mut dyn EventManager) -> i32;
+    fn update(&mut self, win: &mut Window, manager: &mut dyn EventManager, delta: f64) -> i32;
+    fn destroy(&mut self, win: &mut Window, manager: &mut dyn EventManager, exit_code: i32);
 }
 
 #[cfg(not(target_family = "wasm"))]
