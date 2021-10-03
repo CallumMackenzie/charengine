@@ -3,15 +3,13 @@ use crate::state::State;
 use crate::window::{
     AbstractWindow, AbstractWindowFactory, EventManager, WindowCreateArgs, WindowEvent,
 };
-use js_sys::Function;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
-    Event, FocusEvent, HtmlCanvasElement, KeyboardEvent, MouseEvent, WebGl2RenderingContext,
-    WheelEvent,
+    Event, HtmlCanvasElement, KeyboardEvent, MouseEvent, WebGl2RenderingContext, WheelEvent,
 };
 
 #[wasm_bindgen]
@@ -20,6 +18,10 @@ extern "C" {
     fn js_log_string(a: &str);
     #[wasm_bindgen(js_namespace = console, js_name = warn)]
     fn js_warn_string(a: &str);
+    #[wasm_bindgen(js_namespace = console, js_name = error)]
+    fn js_err_string(a: &str);
+
+    fn alert(a: &str);
 }
 
 #[wasm_bindgen]
@@ -42,33 +44,34 @@ impl WebWindowEventSet {
         ret
     }
 }
-
-trait WebEventState<E: Copy + Clone>: 'static {
-    fn add_event(&mut self, state: E);
-    fn clear(&mut self);
-    fn get_events(&mut self) -> Vec<E>;
-    fn add_events(&mut self, events: Vec<E>) {
-        for i in events {
-            self.add_event(i);
-        }
-    }
-}
 struct WebEventListener {
     events: Vec<WindowEvent>,
+    window_listeners: Vec<WindowEventListener>,
+    canvas_listeners: Vec<CanvasEventListener>,
 }
-impl WebEventState<WindowEvent> for WebEventListener {
-    fn add_event(&mut self, state: WindowEvent) {
+impl WebEventListener {
+    pub fn add_window_listener(&mut self, ls: WindowEventListener) {
+        self.window_listeners.push(ls);
+    }
+    pub fn add_canvas_listener(&mut self, ls: CanvasEventListener) {
+        self.canvas_listeners.push(ls);
+    }
+    pub fn add_event(&mut self, state: WindowEvent) {
         self.events.push(state);
     }
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.events.clear();
     }
-    fn get_events(&mut self) -> Vec<WindowEvent> {
+    pub fn get_events(&mut self) -> Vec<WindowEvent> {
         let mut ret = Vec::<WindowEvent>::new();
         for i in 0..self.events.len() {
             ret.push(self.events[i]);
         }
         ret
+    }
+    pub fn clear_listeners(&mut self) {
+        self.window_listeners.clear();
+        self.canvas_listeners.clear();
     }
 }
 
@@ -105,6 +108,18 @@ impl WebGlWindow {
     #[wasm_bindgen(js_name = pollEvents)]
     pub fn wpoll_events(&mut self) {
         self.poll_events();
+    }
+    #[wasm_bindgen(js_name = destroy)]
+    pub fn wdestroy(&mut self) {
+        if let Some(mutex) = self.event_listener.as_ref() {
+            if let Ok(mut listener) = mutex.lock() {
+                listener.clear_listeners();
+            } else {
+                js_err_string(&"Could not destroy window: mutex posioned.");
+            }
+        } else {
+            js_warn_string(&"No window event listener found to destroy.");
+        }
     }
 }
 
@@ -167,264 +182,41 @@ impl AbstractWindow for WebGlWindow {
 impl AbstractWindowFactory for WebGlWindow {
     fn create(args: &WindowCreateArgs) -> Self {
         let document = web_sys::window().unwrap().document().unwrap();
-        let canvas = document.get_element_by_id(&args.title).unwrap();
-        let canvas: web_sys::HtmlCanvasElement =
-            canvas.dyn_into::<web_sys::HtmlCanvasElement>().unwrap();
-        let mut window = WebGlWindow {
-            context: canvas
-                .get_context("webgl2")
-                .unwrap()
-                .unwrap()
-                .dyn_into::<WebGl2RenderingContext>()
-                .unwrap(),
-            canvas: Arc::new(Mutex::new(canvas)),
-            clear_mask: WebGl2RenderingContext::COLOR_BUFFER_BIT,
-            should_close: false,
-            event_listener: None,
-            events: Vec::new(),
-        };
-        window.add_event_listeners();
-        window
-            .event_listener
-            .as_ref()
-            .unwrap()
-            .lock()
-            .unwrap()
-            .add_event(WindowEvent::Size(window.get_size().0, window.get_size().1));
-        window
-    }
-}
-
-impl WebGlWindow {
-    fn add_event_listeners(&mut self) {
-        let listener = Arc::new(Mutex::new(WebEventListener { events: Vec::new() }));
-        self.add_keydown_listener(&listener);
-        self.add_keyup_listener(&listener);
-        self.add_keyheld_listener(&listener);
-        self.add_mousedown_listener(&listener);
-        self.add_mouseup_listener(&listener);
-        self.add_mouseheld_listener(&listener);
-        self.add_mousemove_listener(&listener);
-        self.add_focus_listener(&listener);
-        self.add_blur_listener(&listener);
-        self.add_mouseenter_listener(&listener);
-        self.add_mouseleave_listener(&listener);
-        self.add_onclose_listener(&listener);
-        self.add_resize_listener(&listener);
-        self.add_scroll_listener(&listener);
-        self.event_listener = Some(listener);
-    }
-    #[inline]
-    fn add_event_listener(&self, name: &str, cl: &Function) {
-        self.canvas
-            .lock()
-            .unwrap()
-            .add_event_listener_with_callback(name, cl)
-            .unwrap();
-    }
-    #[inline]
-    fn add_win_event_listener(&self, name: &str, cl: &Function) {
-        web_sys::window()
-            .unwrap()
-            .add_event_listener_with_callback(name, cl)
-            .unwrap();
-    }
-    #[inline]
-    fn add_scroll_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |e: Event| {
-            if let Ok(event) = e.dyn_into::<WheelEvent>() {
-                state_clone
-                    .lock()
-                    .unwrap()
-                    .add_event(WindowEvent::Scroll(event.delta_x(), event.delta_y()));
+        if let Some(canvas) = document.get_element_by_id(&args.title) {
+            if let Ok(canvas) = canvas.dyn_into::<web_sys::HtmlCanvasElement>() {
+                if let Ok(Some(context)) = canvas.get_context("webgl2") {
+                    let mut window = WebGlWindow {
+                        context: context.dyn_into::<WebGl2RenderingContext>().unwrap(),
+                        canvas: Arc::new(Mutex::new(canvas)),
+                        clear_mask: WebGl2RenderingContext::COLOR_BUFFER_BIT,
+                        should_close: false,
+                        event_listener: None,
+                        events: Vec::new(),
+                    };
+                    window.add_event_listeners();
+                    window
+                        .event_listener
+                        .as_ref()
+                        .unwrap()
+                        .lock()
+                        .unwrap()
+                        .add_event(WindowEvent::Size(window.get_size().0, window.get_size().1));
+                    window
+                } else {
+                    js_err_string(&"Platform may not support OpenGL ES 2.0");
+                    panic!();
+                }
+            } else {
+                js_err_string(&format!("Element ID \"{}\" is not a canvas.", &args.title));
+                panic!();
             }
-        }) as Box<dyn FnMut(_)>);
-        self.add_win_event_listener("wheel", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn add_resize_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let canvas = Arc::clone(&self.canvas);
-        let cl = Closure::wrap(Box::new(move |_: Event| {
-            let canvas_rect = canvas.lock().unwrap().get_bounding_client_rect();
-            state_clone.lock().unwrap().add_event(WindowEvent::Size(
-                canvas_rect.width() as i32,
-                canvas_rect.height() as i32,
+        } else {
+            js_err_string(&format!(
+                "Could not find canvas \"{}\" on document.",
+                &args.title
             ));
-        }) as Box<dyn FnMut(_)>);
-        self.add_win_event_listener("resize", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn add_onclose_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |_: Event| {
-            state_clone.lock().unwrap().add_event(WindowEvent::Close);
-        }) as Box<dyn FnMut(_)>);
-        self.add_win_event_listener("beforeunload", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn add_mouseleave_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        self.mouse_enter_listener_template(lstnr, "mouseleave", false);
-    }
-    #[inline]
-    fn add_mouseenter_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        self.mouse_enter_listener_template(lstnr, "mouseenter", true);
-    }
-    #[inline]
-    fn add_focus_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        self.focus_listener_template(lstnr, "focus", true);
-    }
-    #[inline]
-    fn add_blur_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        self.focus_listener_template(lstnr, "blur", false);
-    }
-    #[inline]
-    fn add_mousemove_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |e: Event| {
-            e.prevent_default();
-            if let Ok(event) = e.dyn_into::<MouseEvent>() {
-                state_clone
-                    .lock()
-                    .unwrap()
-                    .add_event(WindowEvent::CursorPosition(
-                        event.offset_x() as f64,
-                        event.offset_y() as f64,
-                    ));
-            }
-        }) as Box<dyn FnMut(_)>);
-        self.add_event_listener("mousemove", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn add_keydown_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |e: Event| {
-            e.prevent_default();
-            if let Ok(event) = e.dyn_into::<KeyboardEvent>() {
-                state_clone.lock().unwrap().add_event(WindowEvent::KeyDown(
-                    js_key_to_key(&event),
-                    event.key_code() as i32,
-                ));
-            }
-        }) as Box<dyn FnMut(_)>);
-        self.add_win_event_listener("keydown", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn add_keyup_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |e: Event| {
-            e.prevent_default();
-            if let Ok(event) = e.dyn_into::<KeyboardEvent>() {
-                state_clone.lock().unwrap().add_event(WindowEvent::KeyUp(
-                    js_key_to_key(&event),
-                    event.key_code() as i32,
-                ));
-            }
-        }) as Box<dyn FnMut(_)>);
-        self.add_win_event_listener("keyup", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn add_keyheld_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |e: Event| {
-            e.prevent_default();
-            if let Ok(event) = e.dyn_into::<KeyboardEvent>() {
-                state_clone.lock().unwrap().add_event(WindowEvent::KeyHeld(
-                    js_key_to_key(&event),
-                    event.key_code() as i32,
-                ));
-            }
-        }) as Box<dyn FnMut(_)>);
-        self.add_win_event_listener("keyheld", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn add_mousedown_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |e: Event| {
-            e.prevent_default();
-            if let Ok(event) = e.dyn_into::<MouseEvent>() {
-                state_clone
-                    .lock()
-                    .unwrap()
-                    .add_event(WindowEvent::MouseButtonDown(js_mouse_to_mouse(&event)));
-            }
-        }) as Box<dyn FnMut(_)>);
-        self.add_event_listener("mousedown", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn add_mouseup_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |e: Event| {
-            e.prevent_default();
-            if let Ok(event) = e.dyn_into::<MouseEvent>() {
-                state_clone
-                    .lock()
-                    .unwrap()
-                    .add_event(WindowEvent::MouseButtonUp(js_mouse_to_mouse(&event)));
-            }
-        }) as Box<dyn FnMut(_)>);
-        self.add_event_listener("mouseup", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn add_mouseheld_listener(&self, lstnr: &Arc<Mutex<WebEventListener>>) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |e: Event| {
-            e.prevent_default();
-            if let Ok(event) = e.dyn_into::<MouseEvent>() {
-                state_clone
-                    .lock()
-                    .unwrap()
-                    .add_event(WindowEvent::MouseButtonHeld(js_mouse_to_mouse(&event)));
-            }
-        }) as Box<dyn FnMut(_)>);
-        self.add_event_listener("mouseheld", cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn mouse_enter_listener_template(
-        &self,
-        lstnr: &Arc<Mutex<WebEventListener>>,
-        name: &str,
-        enter: bool,
-    ) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |_: Event| {
-            state_clone
-                .lock()
-                .unwrap()
-                .add_event(WindowEvent::CursorEnter(enter));
-        }) as Box<dyn FnMut(_)>);
-        self.add_event_listener(name, cl.as_ref().unchecked_ref());
-        cl.forget();
-    }
-    #[inline]
-    fn focus_listener_template(
-        &self,
-        lstnr: &Arc<Mutex<WebEventListener>>,
-        name: &str,
-        focus: bool,
-    ) {
-        let state_clone = Arc::clone(lstnr);
-        let cl = Closure::wrap(Box::new(move |e: Event| {
-            if let Ok(_) = e.dyn_into::<FocusEvent>() {
-                state_clone
-                    .lock()
-                    .unwrap()
-                    .add_event(WindowEvent::Focus(focus));
-            }
-        }) as Box<dyn FnMut(_)>);
-        self.add_win_event_listener(name, cl.as_ref().unchecked_ref());
-        cl.forget();
+            panic!();
+        }
     }
 }
 
@@ -459,6 +251,13 @@ impl WebGlWindow {
                     );
                 } else {
                     state.destroy(&mut self, &mut manager, update_res);
+                    if let Some(mutex) = self.event_listener.as_ref() {
+                        if let Ok(mut listener) = mutex.lock() {
+                            listener.clear_listeners();
+                        } else {
+                            js_err_string(&"Cannot remove event listeners: mutex poisoned.");
+                        }
+                    }
                     js_log_string("State destroyed.");
                     let _ = f.borrow_mut().take();
                 }
@@ -468,6 +267,301 @@ impl WebGlWindow {
                 .request_animation_frame(g.borrow().as_ref().unwrap().as_ref().unchecked_ref())
                 .unwrap();
         }
+    }
+}
+
+struct CanvasEventListener {
+    element: Arc<Mutex<HtmlCanvasElement>>,
+    name: &'static str,
+    cb: Closure<dyn FnMut(Event)>,
+}
+impl CanvasEventListener {
+    fn new(
+        element: Arc<Mutex<HtmlCanvasElement>>,
+        name: &'static str,
+        cb: Closure<dyn FnMut(Event)>,
+    ) -> Self {
+        element
+            .lock()
+            .unwrap()
+            .add_event_listener_with_callback(name, cb.as_ref().unchecked_ref())
+            .unwrap();
+        Self { element, name, cb }
+    }
+}
+impl Drop for CanvasEventListener {
+    fn drop(&mut self) {
+        self.element
+            .lock()
+            .unwrap()
+            .remove_event_listener_with_callback(self.name, self.cb.as_ref().unchecked_ref())
+            .unwrap();
+    }
+}
+
+struct WindowEventListener {
+    name: &'static str,
+    cb: Closure<dyn FnMut(Event)>,
+}
+impl WindowEventListener {
+    fn new(name: &'static str, cb: Closure<dyn FnMut(Event)>) -> Self {
+        web_sys::window()
+            .unwrap()
+            .add_event_listener_with_callback(name, cb.as_ref().unchecked_ref())
+            .unwrap();
+        Self { name, cb }
+    }
+}
+impl Drop for WindowEventListener {
+    fn drop(&mut self) {
+        web_sys::window()
+            .unwrap()
+            .remove_event_listener_with_callback(self.name, self.cb.as_ref().unchecked_ref())
+            .unwrap();
+    }
+}
+impl WebGlWindow {
+    fn add_event_listeners(&mut self) {
+        let listener = Arc::new(Mutex::new(WebEventListener {
+            events: Vec::new(),
+            window_listeners: Vec::new(),
+            canvas_listeners: Vec::new(),
+        }));
+        self.add_keydown_listener(&listener);
+        self.add_keyup_listener(&listener);
+        self.add_keyheld_listener(&listener);
+        self.add_mousedown_listener(&listener);
+        self.add_mouseup_listener(&listener);
+        self.add_mouseheld_listener(&listener);
+        self.add_mousemove_listener(&listener);
+        self.add_focus_listener(&listener);
+        self.add_blur_listener(&listener);
+        self.add_mouseenter_listener(&listener);
+        self.add_mouseleave_listener(&listener);
+        self.add_onclose_listener(&listener);
+        self.add_resize_listener(&listener);
+        self.add_scroll_listener(&listener);
+        self.event_listener = Some(listener);
+    }
+    #[inline]
+    fn add_event_listener(
+        &mut self,
+        mutex: &Arc<Mutex<WebEventListener>>,
+        name: &'static str,
+        cl: Closure<dyn FnMut(Event)>,
+    ) {
+        if let Ok(mut listener) = mutex.lock() {
+            let canvas_arc = Arc::clone(&self.canvas);
+            listener.add_canvas_listener(CanvasEventListener::new(canvas_arc, name, cl));
+        } else {
+            js_err_string(&format!(
+                "Could not add canvas event listener; mutex poisoned: ({}).",
+                name
+            ));
+        }
+    }
+    #[inline]
+    fn add_win_event_listener(
+        mutex: &Arc<Mutex<WebEventListener>>,
+        name: &'static str,
+        cl: Closure<dyn FnMut(Event)>,
+    ) {
+        if let Ok(mut listener) = mutex.lock() {
+            listener.add_window_listener(WindowEventListener::new(name, cl));
+        } else {
+            js_err_string(&format!(
+                "Could not add window event listener; mutex poisoned: ({}).",
+                name
+            ));
+        }
+    }
+    #[inline]
+    fn add_scroll_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |e: Event| {
+            if let Ok(event) = e.dyn_into::<WheelEvent>() {
+                state_clone
+                    .lock()
+                    .unwrap()
+                    .add_event(WindowEvent::Scroll(event.delta_x(), event.delta_y()));
+            }
+        }) as Box<dyn FnMut(_)>);
+        Self::add_win_event_listener(lstnr, "wheel", cl);
+    }
+    #[inline]
+    fn add_resize_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let canvas = Arc::clone(&self.canvas);
+        let cl = Closure::wrap(Box::new(move |_: Event| {
+            let canvas_rect = canvas.lock().unwrap().get_bounding_client_rect();
+            state_clone.lock().unwrap().add_event(WindowEvent::Size(
+                canvas_rect.width() as i32,
+                canvas_rect.height() as i32,
+            ));
+        }) as Box<dyn FnMut(_)>);
+        Self::add_win_event_listener(lstnr, "resize", cl);
+    }
+    #[inline]
+    fn add_onclose_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |e: Event| {
+            e.prevent_default();
+            if let Ok(mut state) = state_clone.lock() {
+                state.add_event(WindowEvent::Close);
+            } else {
+                js_err_string(&"Could not add closing events: mutex posioned.");
+            }
+        }) as Box<dyn FnMut(_)>);
+        Self::add_win_event_listener(lstnr, "beforeunload", cl);
+    }
+    #[inline]
+    fn add_mouseleave_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        self.mouse_enter_listener_template(lstnr, "mouseleave", false);
+    }
+    #[inline]
+    fn add_mouseenter_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        self.mouse_enter_listener_template(lstnr, "mouseenter", true);
+    }
+    #[inline]
+    fn add_focus_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        self.focus_listener_template(lstnr, "focus", true);
+    }
+    #[inline]
+    fn add_blur_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        self.focus_listener_template(lstnr, "blur", false);
+    }
+    #[inline]
+    fn add_mousemove_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |e: Event| {
+            e.prevent_default();
+            if let Ok(event) = e.dyn_into::<MouseEvent>() {
+                state_clone
+                    .lock()
+                    .unwrap()
+                    .add_event(WindowEvent::CursorPosition(
+                        event.offset_x() as f64,
+                        event.offset_y() as f64,
+                    ));
+            }
+        }) as Box<dyn FnMut(_)>);
+        self.add_event_listener(lstnr, "mousemove", cl);
+    }
+    #[inline]
+    fn add_keydown_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |e: Event| {
+            e.prevent_default();
+            if let Ok(event) = e.dyn_into::<KeyboardEvent>() {
+                state_clone.lock().unwrap().add_event(WindowEvent::KeyDown(
+                    js_key_to_key(&event),
+                    event.key_code() as i32,
+                ));
+            }
+        }) as Box<dyn FnMut(_)>);
+        Self::add_win_event_listener(lstnr, "keydown", cl);
+    }
+    #[inline]
+    fn add_keyup_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |e: Event| {
+            e.prevent_default();
+            if let Ok(event) = e.dyn_into::<KeyboardEvent>() {
+                state_clone.lock().unwrap().add_event(WindowEvent::KeyUp(
+                    js_key_to_key(&event),
+                    event.key_code() as i32,
+                ));
+            }
+        }) as Box<dyn FnMut(_)>);
+        Self::add_win_event_listener(lstnr, "keyup", cl);
+    }
+    #[inline]
+    fn add_keyheld_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |e: Event| {
+            e.prevent_default();
+            if let Ok(event) = e.dyn_into::<KeyboardEvent>() {
+                state_clone.lock().unwrap().add_event(WindowEvent::KeyHeld(
+                    js_key_to_key(&event),
+                    event.key_code() as i32,
+                ));
+            }
+        }) as Box<dyn FnMut(_)>);
+        Self::add_win_event_listener(lstnr, "keyheld", cl);
+    }
+    #[inline]
+    fn add_mousedown_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |e: Event| {
+            e.prevent_default();
+            if let Ok(event) = e.dyn_into::<MouseEvent>() {
+                state_clone
+                    .lock()
+                    .unwrap()
+                    .add_event(WindowEvent::MouseButtonDown(js_mouse_to_mouse(&event)));
+            }
+        }) as Box<dyn FnMut(_)>);
+        self.add_event_listener(lstnr, "mousedown", cl);
+    }
+    #[inline]
+    fn add_mouseup_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |e: Event| {
+            e.prevent_default();
+            if let Ok(event) = e.dyn_into::<MouseEvent>() {
+                state_clone
+                    .lock()
+                    .unwrap()
+                    .add_event(WindowEvent::MouseButtonUp(js_mouse_to_mouse(&event)));
+            }
+        }) as Box<dyn FnMut(_)>);
+        self.add_event_listener(lstnr, "mouseup", cl);
+    }
+    #[inline]
+    fn add_mouseheld_listener(&mut self, lstnr: &Arc<Mutex<WebEventListener>>) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |e: Event| {
+            e.prevent_default();
+            if let Ok(event) = e.dyn_into::<MouseEvent>() {
+                state_clone
+                    .lock()
+                    .unwrap()
+                    .add_event(WindowEvent::MouseButtonHeld(js_mouse_to_mouse(&event)));
+            }
+        }) as Box<dyn FnMut(_)>);
+        self.add_event_listener(lstnr, "mouseheld", cl);
+    }
+    #[inline]
+    fn mouse_enter_listener_template(
+        &mut self,
+        lstnr: &Arc<Mutex<WebEventListener>>,
+        name: &'static str,
+        enter: bool,
+    ) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |_: Event| {
+            state_clone
+                .lock()
+                .unwrap()
+                .add_event(WindowEvent::CursorEnter(enter));
+        }) as Box<dyn FnMut(_)>);
+        self.add_event_listener(lstnr, name, cl);
+    }
+    #[inline]
+    fn focus_listener_template(
+        &mut self,
+        lstnr: &Arc<Mutex<WebEventListener>>,
+        name: &'static str,
+        focus: bool,
+    ) {
+        let state_clone = Arc::clone(lstnr);
+        let cl = Closure::wrap(Box::new(move |_: Event| {
+            state_clone
+                .lock()
+                .unwrap()
+                .add_event(WindowEvent::Focus(focus));
+        }) as Box<dyn FnMut(_)>);
+        Self::add_win_event_listener(lstnr, name, cl);
     }
 }
 
