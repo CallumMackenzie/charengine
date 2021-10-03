@@ -59,7 +59,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_family = "wasm"), test)]
-    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = start))]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(start))]
     pub fn native_window_tests() {
         let app = App::new();
         let manager = DefaultEventManager::new();
@@ -67,7 +67,7 @@ mod tests {
             "CharEngine".into(),
             400,
             400,
-            WindowSizeMode::Windowed,
+            WindowSizeMode::Fullscreen,
         ));
         window.render_loop(app, manager);
     }
