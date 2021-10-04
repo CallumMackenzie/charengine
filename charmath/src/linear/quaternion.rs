@@ -90,6 +90,7 @@ macro_rules! quat_assign_operand {
 }
 
 #[derive(Debug)]
+#[repr(C)]
 pub struct Quaternion<N: CharMathNumeric<N>> {
     vec: [N; 4],
 }
@@ -174,6 +175,7 @@ macro_rules! gen_wasm_quat {
     ($QUAT:ident, $NUM:ident, $SVEC:ident) => {
         #[cfg_attr(target_family = "wasm", wasm_bindgen)]
         #[derive(Debug)]
+		#[repr(C)]
         pub struct $QUAT {
             vec: [$NUM; 4],
         }

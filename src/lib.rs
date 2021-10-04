@@ -11,10 +11,12 @@ mod tests {
 	use charmath::linear::matrix::*;
 	use charmath::linear::vector::*;
 	use charmath::linear::quaternion::*;
+	use charwin::data::*;
 
     #[cfg(target_family = "wasm")]
 	use wasm_bindgen::prelude::*;
 
+	#[derive(Debug)]
     pub struct App {
         ctr: f64,
         swap: f64,

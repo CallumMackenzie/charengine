@@ -220,6 +220,7 @@ pub trait SquareMatrix<N: CharMathNumeric<N>, MAT: SquareMatrix<N, MAT>>: Matrix
 }
 
 #[derive(Debug)]
+#[repr(C)]
 pub struct GenericMatrix<N: CharMathNumeric<N>> {
     mat: Vec<Vec<N>>,
 }
@@ -286,6 +287,7 @@ impl<N: CharMathNumeric<N>> Matrix<N, Self> for GenericMatrix<N> {
 impl<N: CharMathNumeric<N>> SquareMatrix<N, GenericMatrix<N>> for GenericMatrix<N> {}
 
 #[derive(Debug)]
+#[repr(C)]
 pub struct Mat4<N: CharMathNumeric<N>> {
     mat: [[N; 4]; 4],
 }
@@ -352,6 +354,7 @@ impl<N: CharMathNumeric<N>> Matrix<N, Self> for Mat4<N> {
 impl<N: CharMathNumeric<N>> SquareMatrix<N, Mat4<N>> for Mat4<N> {}
 
 #[derive(Debug)]
+#[repr(C)]
 pub struct Mat2<N: CharMathNumeric<N>> {
     mat: [[N; 2]; 2],
 }
@@ -581,6 +584,7 @@ macro_rules! gen_wasm_square_matrix {
     ($CLASS:ident, $NUM:ident, $SZ:expr, $VEC:ident) => {
         #[cfg_attr(target_family = "wasm", wasm_bindgen)]
         #[derive(Debug)]
+		#[repr(C)]
         pub struct $CLASS {
             mat: [[$NUM; $SZ]; $SZ],
         }

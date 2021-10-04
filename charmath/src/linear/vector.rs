@@ -148,6 +148,7 @@ macro_rules! define_vec {
     ($CLASS:ident, $NUM:ident, $LEN:expr) => {
         #[cfg_attr(target_family = "wasm", wasm_bindgen)]
         #[derive(Debug)]
+		#[repr(C)]
         pub struct $CLASS {
             vec: [$NUM; $LEN],
         }
