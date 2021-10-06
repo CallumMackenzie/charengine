@@ -268,6 +268,12 @@ impl WebGlWindow {
                 .unwrap();
         }
     }
+    pub fn get_context_ref(&self) -> &WebGl2RenderingContext {
+        &self.context
+    }
+    pub fn get_context_ref_mut(&mut self) -> &mut WebGl2RenderingContext {
+        &mut self.context
+    }
 }
 
 struct CanvasEventListener {

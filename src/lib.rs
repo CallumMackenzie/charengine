@@ -1,22 +1,17 @@
 #[cfg(any(test, target_family = "wasm"))]
 mod tests {
-	use charwin::*;
-	use charwin::state::*;
+    use charmath::linear::vector::*;
+    use charwin::data::c3d::*;
+    use charwin::data::*;
     use charwin::input::*;
+    use charwin::platform::*;
+    use charwin::state::*;
     use charwin::window::*;
-	use charwin::platform::*;
-	use charmath::*;
-	use charmath::linear::*;
-	use charmath::numeric::*;
-	use charmath::linear::matrix::*;
-	use charmath::linear::vector::*;
-	use charmath::linear::quaternion::*;
-	use charwin::data::*;
 
     #[cfg(target_family = "wasm")]
-	use wasm_bindgen::prelude::*;
+    use wasm_bindgen::prelude::*;
 
-	#[derive(Debug)]
+    #[derive(Debug)]
     pub struct App {
         ctr: f64,
         swap: f64,
@@ -32,15 +27,18 @@ mod tests {
     impl State for App {
         fn initialize(&mut self, win: &mut Window, _manager: &mut dyn EventManager) -> i32 {
             win.set_clear_colour(0.0, 0.0, 0.0, 1.0);
+            let mut tris = Vec::new();
+            tris.push(Triangle::<VertexVTN>::new());
+            tris[0].v[0].v.set_x(12f32);
+            tris[0].v[2].n.set_z(33.0f32);
+            let cpu_tris = TriVTNCPUBuffer::from_data(&tris);
+            let gpu_tris = cpu_tris.to_gpu_buffer(win);
+            dbg_log(&format!("CPU: {:?}", cpu_tris.get_data()));
+            dbg_log(&format!("GPU: {:?}", gpu_tris.get_data(win)));
             0
         }
         fn update(&mut self, win: &mut Window, eng: &mut dyn EventManager, delta: f64) -> i32 {
             win.poll_events();
-            dbg_log(&format!(
-                "Mouse pos: ({}, {})",
-                eng.mouse_pos().0,
-                eng.mouse_pos().1
-            ));
             if eng.key_pressed(Key::A) {
                 self.ctr += self.swap * delta;
                 if self.ctr > 1.0 {

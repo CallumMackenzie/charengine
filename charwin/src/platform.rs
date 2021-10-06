@@ -1,8 +1,12 @@
-/// The window for the current plaform.
 #[cfg(not(target_family = "wasm"))]
 pub type Window = crate::window::opengl_window::NativeGlWindow;
+#[cfg(not(target_family = "wasm"))]
+pub type TriGPUBuffer<V> = crate::data::c3d::opengl_data::OpenGlTriGPUBuffer<V>;
+
 #[cfg(target_family = "wasm")]
 pub type Window = crate::window::webgl_window::WebGlWindow;
+#[cfg(target_family = "wasm")]
+pub type TriGPUBuffer<V> = crate::data::c3d::webgl_data::WebGlTriGPUBuffer<V>;
 
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
