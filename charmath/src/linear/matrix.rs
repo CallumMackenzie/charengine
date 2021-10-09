@@ -477,7 +477,7 @@ pub mod matrices {
     }
     pub fn rotation_2d<N: CharMathNumeric<N>>(rot: N) -> Mat2<N> {
         Mat2::<N>::from_flat(
-            &[N::cos(rot), N::sin(rot), N::neg(N::sin(rot)), N::cos(rot)],
+            &[N::cos(rot), N::neg(N::sin(rot)), N::sin(rot), N::cos(rot)],
             2,
             2,
         )
@@ -584,7 +584,7 @@ macro_rules! gen_wasm_square_matrix {
     ($CLASS:ident, $NUM:ident, $SZ:expr, $VEC:ident) => {
         #[cfg_attr(target_family = "wasm", wasm_bindgen)]
         #[derive(Debug)]
-		#[repr(C)]
+        #[repr(C)]
         pub struct $CLASS {
             mat: [[$NUM; $SZ]; $SZ],
         }

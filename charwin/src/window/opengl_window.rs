@@ -10,7 +10,7 @@ use crate::window::{
     AbstractWindow, AbstractWindowFactory, EventManager, WindowCreateArgs, WindowEvent,
     WindowSizeMode,
 };
-use gl::types::{GLenum, GLfloat};
+use gl::types::{GLenum, GLfloat, GLsizei};
 
 pub struct NativeGlWindow {
     glfw: Glfw,
@@ -33,6 +33,7 @@ impl NativeGlWindow {
         }
         let mut fm = FrameManager::new(60f64);
         let mut state_res = state.initialize(&mut self, &mut manager);
+        self.get_gl_errors();
         if state_res == 0 {
             println!("State initialized.");
             loop {
@@ -48,10 +49,53 @@ impl NativeGlWindow {
         }
         state.destroy(&mut self, &mut manager, state_res);
         println!("State destroyed.");
+        self.get_gl_errors();
+    }
+    fn get_gl_errors(&self) {
+        unsafe {
+            let mut err = gl::GetError();
+            while err != gl::NO_ERROR {
+                match err {
+                    gl::INVALID_ENUM => {
+                        panic!("GL_INVALID_ENUM (0x0500)");
+                    }
+                    gl::INVALID_VALUE => {
+                        panic!("GL_INVALID_VALUE (0x0501)");
+                    }
+                    gl::INVALID_OPERATION => {
+                        panic!("GL_INVALID_OPERATION (0x0502)");
+                    }
+                    gl::STACK_OVERFLOW => {
+                        panic!("GL_STACK_OVERFLOW (0x0503)");
+                    }
+                    gl::STACK_UNDERFLOW => {
+                        panic!("GL_STACK_UNDERFLOW (0x0504)");
+                    }
+                    gl::OUT_OF_MEMORY => {
+                        panic!("GL_OUT_OF_MEMORY (0x0505)");
+                    }
+                    gl::INVALID_FRAMEBUFFER_OPERATION => {
+                        panic!("GL_INVALID_FRAMEBUFFER_OPERATION (0x0506)");
+                    }
+                    gl::CONTEXT_LOST => {
+                        panic!("GL_CONTEXT_LOST (0x0507)");
+                    }
+                    _ => {
+                        println!("OpenGL error code: {}.", err);
+                    }
+                }
+                err = gl::GetError();
+            }
+        }
     }
 }
 
 impl AbstractWindow for NativeGlWindow {
+    fn set_resolution(&self, res: (i32, i32)) {
+        unsafe {
+            gl::Viewport(0, 0, res.0 as GLsizei, res.1 as GLsizei);
+        }
+    }
     fn set_fullscreen(&mut self) {
         unimplemented!();
     }
@@ -127,8 +171,8 @@ impl AbstractWindowFactory for NativeGlWindow {
                 );
             });
         }
-        glfw_window.set_all_polling(true);
         glfw_window.make_current();
+        glfw_window.set_all_polling(true);
         gl::load_with(|s| glfw.get_proc_address_raw(s));
         NativeGlWindow {
             glfw,

@@ -77,7 +77,7 @@ impl WebEventListener {
 
 #[wasm_bindgen]
 pub struct WebGlWindow {
-    context: WebGl2RenderingContext,
+    context: Arc<Mutex<WebGl2RenderingContext>>,
     canvas: Arc<Mutex<HtmlCanvasElement>>,
     clear_mask: u32,
     should_close: bool,
@@ -124,17 +124,21 @@ impl WebGlWindow {
 }
 
 impl AbstractWindow for WebGlWindow {
+    fn set_resolution(&self, res: (i32, i32)) {
+        self.context.lock().unwrap().viewport(0, 0, res.0, res.1);
+    }
     fn set_fullscreen(&mut self) {
         // Does nothing on WASM
     }
     fn set_windowed(&mut self) {
         // Does nothing on WASM
     }
-    fn set_title(&mut self, _title: &str) {
-        // Does nothing on WASM
+    fn set_title(&mut self, title: &str) {
+        self.canvas.lock().unwrap().set_id(title);
     }
-    fn set_size(&mut self, _sz: (i32, i32)) {
-        // Does nothing on WASM
+    fn set_size(&mut self, sz: (i32, i32)) {
+        self.canvas.lock().unwrap().set_width(sz.0 as u32);
+        self.canvas.lock().unwrap().set_height(sz.1 as u32);
     }
     fn close(&mut self) {
         self.should_close = true;
@@ -164,10 +168,12 @@ impl AbstractWindow for WebGlWindow {
     }
     fn set_clear_colour(&mut self, r: f64, g: f64, b: f64, a: f64) {
         self.context
+            .lock()
+            .unwrap()
             .clear_color(r as f32, g as f32, b as f32, a as f32);
     }
     fn clear(&mut self) {
-        self.context.clear(self.clear_mask)
+        self.context.lock().unwrap().clear(self.clear_mask)
     }
     fn get_size(&self) -> (i32, i32) {
         let bounding_rect = self.canvas.lock().unwrap().get_bounding_client_rect();
@@ -186,7 +192,9 @@ impl AbstractWindowFactory for WebGlWindow {
             if let Ok(canvas) = canvas.dyn_into::<web_sys::HtmlCanvasElement>() {
                 if let Ok(Some(context)) = canvas.get_context("webgl2") {
                     let mut window = WebGlWindow {
-                        context: context.dyn_into::<WebGl2RenderingContext>().unwrap(),
+                        context: Arc::new(Mutex::new(
+                            context.dyn_into::<WebGl2RenderingContext>().unwrap(),
+                        )),
                         canvas: Arc::new(Mutex::new(canvas)),
                         clear_mask: WebGl2RenderingContext::COLOR_BUFFER_BIT,
                         should_close: false,
@@ -268,11 +276,8 @@ impl WebGlWindow {
                 .unwrap();
         }
     }
-    pub fn get_context_ref(&self) -> &WebGl2RenderingContext {
-        &self.context
-    }
-    pub fn get_context_ref_mut(&mut self) -> &mut WebGl2RenderingContext {
-        &mut self.context
+    pub fn get_context_arc(&self) -> Arc<Mutex<WebGl2RenderingContext>> {
+        Arc::clone(&self.context)
     }
 }
 

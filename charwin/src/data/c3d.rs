@@ -1,6 +1,5 @@
 use crate::data::{CPUBuffer, GPUBuffer};
-use crate::platform::TriGPUBuffer;
-use crate::platform::Window;
+use crate::platform::{TriGPUBuffer, Window};
 use charmath::linear::vector::{Vec2, Vec2F, Vec3, Vec3F};
 use std::ops::{Index, IndexMut};
 
@@ -9,24 +8,24 @@ pub mod opengl_data;
 #[cfg(target_family = "wasm")]
 pub mod webgl_data;
 
-pub fn get_triangle_data() -> Vec<Triangle<VertexVTN>> {
-    vec![Triangle::from_verts(&[
-        VertexVTN::from_point_uv_norm(
-            &Vec3F::new(0.0, 0.0, 0.0),
-            &Vec2F::new(0.0, 0.0),
-            &Vec3F::new(0.0, 1.0, 0.0),
-        ),
-        VertexVTN::from_point_uv_norm(
-            &Vec3F::new(1.0, 0.0, 0.0),
-            &Vec2F::new(1.0, 0.0),
-            &Vec3F::new(0.0, 1.0, 0.0),
-        ),
-        VertexVTN::from_point_uv_norm(
-            &Vec3F::new(0.0, 0.0, 1.0),
-            &Vec2F::new(0.0, 1.0),
-            &Vec3F::new(0.0, 1.0, 0.0),
-        ),
-    ])]
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Triangle<V: VertexBase> {
+    pub v: [V; 3],
+}
+impl<V: VertexBase> TriangleBase for Triangle<V> {
+    type Vert = V;
+    fn new() -> Self {
+        Self {
+            v: [Self::Vert::new(); 3],
+        }
+    }
+    fn get_vertecies(&self) -> [V; 3] {
+        [self.v[0], self.v[1], self.v[2]]
+    }
+    fn set_vertecies(&mut self, nv: &[V; 3]) {
+        self.v = *nv;
+    }
 }
 
 pub trait VertexBase: Copy + Sized {
@@ -57,28 +56,126 @@ pub trait TriangleBase: Sized {
     }
 }
 
+#[derive(Debug)]
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct Triangle<V: VertexBase> {
-    pub v: [V; 3],
+pub struct TriCPUBuffer<V: VertexBase> {
+    tris: Vec<Triangle<V>>,
 }
-impl<V: VertexBase> TriangleBase for Triangle<V> {
-    type Vert = V;
+impl<V: VertexBase> TriCPUBuffer<V> {
+    pub fn n_tris(&self) -> usize {
+        self.tris.len()
+    }
+    pub fn to_f32_array(&self) -> Vec<f32> {
+        let mut ret = Vec::with_capacity(self.tris.len() * 3 * V::float_size());
+        for i in 0..self.tris.len() {
+            for j in 0..3 {
+                for float in self.tris[i].v[j].to_f32_array() {
+                    ret.push(float);
+                }
+            }
+        }
+        ret
+    }
+    pub fn from_f32_array(arr: &[f32]) -> Self {
+        let mut data = Vec::new();
+        for i in 0..(arr.len() / V::float_size() / 3) {
+            let mut tri = Triangle::<V>::new();
+            let arr_index = i * V::float_size() * 3;
+            for j in 0..3 {
+                let start_slice = arr_index + (V::float_size() * j);
+                let end_slice = start_slice + V::float_size();
+                tri.v[j] = V::from_f32_array(&arr[start_slice..end_slice]);
+            }
+            data.push(tri);
+        }
+        Self { tris: data }
+    }
+    pub fn data_ptr(&self) -> *const f32 {
+        self.tris.as_ptr() as *const f32
+    }
+}
+impl<V: VertexBase> CPUBuffer for TriCPUBuffer<V> {
+    type Data = Vec<Triangle<V>>;
+    type GPUType = TriGPUBuffer<V>;
     fn new() -> Self {
-        Self {
-            v: [Self::Vert::new(); 3],
+        TriCPUBuffer { tris: Vec::new() }
+    }
+    fn set_data(&mut self, data: &Self::Data) {
+        self.tris.clear();
+        for i in 0..data.len() {
+            self.tris.push(data[i]);
         }
     }
-    fn get_vertecies(&self) -> [V; 3] {
-        [self.v[0], self.v[1], self.v[2]]
+    fn get_data(&self) -> Self::Data {
+        let mut ret = Vec::with_capacity(self.tris.len());
+        for i in 0..self.tris.len() {
+            ret.push(self.tris[i]);
+        }
+        ret
     }
-    fn set_vertecies(&mut self, nv: &[V; 3]) {
-        self.v = *nv;
+    fn to_gpu_buffer(&self, win: &mut Window) -> Self::GPUType {
+        Self::GPUType::from_data(win, &self.tris)
+    }
+}
+impl<V: VertexBase> Index<usize> for TriCPUBuffer<V> {
+    type Output = Triangle<V>;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.tris[index]
+    }
+}
+impl<V: VertexBase> IndexMut<usize> for TriCPUBuffer<V> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.tris[index]
     }
 }
 
-#[repr(C)]
 #[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct VertexV {
+    pub v: Vec3F,
+}
+impl VertexV {
+    pub fn from_point(p: &Vec3F) -> Self {
+        Self { v: *p }
+    }
+}
+impl VertexBase for VertexV {
+    fn new() -> Self {
+        Self {
+            v: Vec3F::new(0f32, 0f32, 0f32),
+        }
+    }
+    fn float_size() -> usize {
+        3usize
+    }
+    fn get_point(&self) -> Vec3F {
+        self.v
+    }
+    fn get_uv(&self) -> Vec2F {
+        Vec2F::new(0.0, 0.0)
+    }
+    fn get_normal(&self) -> Vec3F {
+        Vec3F::new(0.0, 1.0, 0.0)
+    }
+    fn set_point(&mut self, p: &Vec3F) {
+        self.v = *p;
+    }
+    fn set_uv(&mut self, _: &Vec2F) {}
+    fn set_normal(&mut self, _: &Vec3F) {}
+    fn to_f32_array(&self) -> Vec<f32> {
+        vec![self.v[0], self.v[1], self.v[2]]
+    }
+    fn from_f32_array(arr: &[f32]) -> Self {
+        let mut ret = Self::new();
+        for i in 0..3 {
+            ret.v[i] = arr[i];
+        }
+        ret
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
 pub struct VertexVTN {
     pub v: Vec3F,
     pub t: Vec2F,
@@ -147,83 +244,5 @@ impl VertexBase for VertexVTN {
             ret.n[i] = arr[5 + i];
         }
         ret
-    }
-}
-
-pub struct TriCPUBuffer<V: VertexBase> {
-    tris: Vec<Triangle<V>>,
-}
-impl<V: VertexBase> TriCPUBuffer<V> {
-    pub fn n_tris(&self) -> usize {
-        self.tris.len()
-    }
-}
-impl<V: VertexBase> CPUBuffer for TriCPUBuffer<V> {
-    type Data = Vec<Triangle<V>>;
-    type GPUType = TriGPUBuffer<V>;
-    fn new() -> Self {
-        TriCPUBuffer { tris: Vec::new() }
-    }
-    fn set_data(&mut self, data: &Self::Data) {
-        self.tris.clear();
-        for i in 0..data.len() {
-            self.tris.push(data[i]);
-        }
-    }
-    fn get_data(&self) -> Self::Data {
-        let mut ret = Vec::with_capacity(self.tris.len());
-        for i in 0..self.tris.len() {
-            ret.push(self.tris[i]);
-        }
-        ret
-    }
-    fn to_gpu_buffer(&self, win: &mut Window) -> Self::GPUType {
-        Self::GPUType::from_data(win, &self.tris)
-    }
-}
-impl<V: VertexBase> Index<usize> for TriCPUBuffer<V> {
-    type Output = Triangle<V>;
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.tris[index]
-    }
-}
-impl<V: VertexBase> IndexMut<usize> for TriCPUBuffer<V> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.tris[index]
-    }
-}
-
-pub type TriVTNCPUBuffer = TriCPUBuffer<VertexVTN>;
-pub type TriVTNGPUBuffer = TriGPUBuffer<VertexVTN>;
-
-pub trait TriNumConvertable<V: VertexBase> {
-    fn self_from_tris(tris: &Vec<Triangle<V>>) -> Self;
-    fn tris_from_self(arr: &Self) -> Vec<Triangle<V>>;
-}
-impl<V: VertexBase> TriNumConvertable<V> for Vec<f32> {
-    fn self_from_tris(tris: &Vec<Triangle<V>>) -> Vec<f32> {
-        let mut ret = Vec::with_capacity(tris.len() * 3 * V::float_size());
-        for i in 0..tris.len() {
-            for j in 0..3 {
-                for float in tris[i].v[j].to_f32_array() {
-                    ret.push(float);
-                }
-            }
-        }
-        ret
-    }
-    fn tris_from_self(arr: &Vec<f32>) -> Vec<Triangle<V>> {
-        let mut data = Vec::new();
-        for i in 0..(arr.len() / V::float_size() / 3) {
-            let mut tri = Triangle::<V>::new();
-            let arr_index = i * V::float_size() * 3;
-            for j in 0..3 {
-                let start_slice = arr_index + (V::float_size() * j);
-                let end_slice = start_slice + V::float_size();
-                tri.v[j] = V::from_f32_array(&arr[start_slice..end_slice]);
-            }
-            data.push(tri);
-        }
-        data
     }
 }

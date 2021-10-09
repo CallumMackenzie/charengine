@@ -7,6 +7,7 @@ pub mod webgl_window;
 use wasm_bindgen::prelude::*;
 
 use crate::input::{Key, MouseButton};
+use charmath::linear::vector::{Vec2, Vec2F};
 use std::collections::HashMap;
 
 /// Window size states.
@@ -74,6 +75,7 @@ pub trait EventManager: 'static {
     fn mouse_pressed(&self, button: MouseButton) -> bool;
     fn scroll_change(&self) -> (f64, f64);
     fn total_scroll(&self) -> (f64, f64);
+    fn screen_size_changed(&self) -> ((i32, i32), bool);
     fn process_events(&mut self, events: &Vec<WindowEvent>);
 
     fn mouse_left_pressed(&self) -> bool {
@@ -93,6 +95,9 @@ pub trait EventManager: 'static {
     fn mouse_y(&self) -> f64 {
         self.mouse_pos().1
     }
+    fn gl_mouse_vec(&self) -> Vec2F {
+        Vec2F::new(self.mouse_x() as f32, 1.0 - self.mouse_y() as f32) * 2.0 - 1.0
+    }
 }
 
 /// A standard event manager implementation.
@@ -102,8 +107,8 @@ pub struct DefaultEventManager {
     mouse_pos: (f64, f64),
     keys: HashMap<Key, bool>,
     mouse_buttons: HashMap<MouseButton, bool>,
-    win_size: (i32, i32),
-    win_pos: (i32, i32),
+    win_size: ((i32, i32), bool),
+    win_pos: ((i32, i32), bool),
     focused: bool,
     cursor_on_window: bool,
     scroll_diff: (f64, f64),
@@ -117,8 +122,8 @@ impl DefaultEventManager {
             mouse_pos: (0.0, 0.0),
             keys: HashMap::new(),
             mouse_buttons: HashMap::new(),
-            win_size: (0, 0),
-            win_pos: (0, 0),
+            win_size: ((0, 0), false),
+            win_pos: ((0, 0), false),
             focused: true,
             cursor_on_window: true,
             scroll_diff: (0.0, 0.0),
@@ -127,6 +132,9 @@ impl DefaultEventManager {
     }
 }
 impl EventManager for DefaultEventManager {
+    fn screen_size_changed(&self) -> ((i32, i32), bool) {
+        self.win_size
+    }
     fn mouse_pos(&self) -> (f64, f64) {
         self.mouse_pos
     }
@@ -156,19 +164,23 @@ impl EventManager for DefaultEventManager {
     fn process_events(&mut self, events: &Vec<WindowEvent>) {
         // crate::platform::dbg_log(&format!("Self: {:?}", self));
         self.scroll_diff = (0.0, 0.0);
+        self.win_pos.1 = false;
+        self.win_size.1 = false;
         let mut mouse_changed = false;
         let mut mouse_pos = (0.0, 0.0);
         for event in events {
             match event {
                 WindowEvent::Size(w, h) => {
-                    self.win_size = (*w, *h);
+                    if self.win_size.0 != (*w, *h) {
+                        self.win_size = ((*w, *h), true);
+                    }
                 }
                 WindowEvent::CursorPosition(x, y) => {
                     mouse_pos = (*x, *y);
                     mouse_changed = true;
                 }
                 WindowEvent::Position(x, y) => {
-                    self.win_pos = (*x, *y);
+                    self.win_pos = ((*x, *y), true);
                 }
                 WindowEvent::Focus(focused) => {
                     self.focused = *focused;
@@ -196,10 +208,10 @@ impl EventManager for DefaultEventManager {
                 _ => {}
             }
         }
-        if mouse_changed && self.win_size.0 > 0 && self.win_size.1 > 0 {
+        if mouse_changed && self.win_size.0 .0 > 0 && self.win_size.0 .1 > 0 {
             self.mouse_pos = (
-                mouse_pos.0 / self.win_size.0 as f64,
-                mouse_pos.1 / self.win_size.1 as f64,
+                mouse_pos.0 / self.win_size.0 .0 as f64,
+                mouse_pos.1 / self.win_size.0 .1 as f64,
             );
         }
     }
@@ -264,6 +276,7 @@ pub trait AbstractWindow {
     fn clear(&mut self);
     fn get_size(&self) -> (i32, i32);
     fn get_pos(&self) -> (i32, i32);
+    fn set_resolution(&self, res: (i32, i32));
 
     fn get_width(&self) -> i32 {
         self.get_size().0
