@@ -568,6 +568,9 @@ pub trait Vec2<N: CharMathNumeric<N>, V: Vec2<N, V>>: Vector<N, V> {
     fn set_y(&mut self, y: N) {
         self.set_value(1, y);
     }
+    fn as_tuple(&self) -> (N, N) {
+        (self.get_x(), self.get_y())
+    }
 }
 pub trait Vec3<N: CharMathNumeric<N>, V: Vec3<N, V>>: Vector<N, V> {
     fn new(x: N, y: N, z: N) -> V;
@@ -595,6 +598,9 @@ pub trait Vec3<N: CharMathNumeric<N>, V: Vec3<N, V>>: Vector<N, V> {
     fn set_z(&mut self, z: N) {
         self.set_value(2, z);
     }
+    fn as_tuple(&self) -> (N, N, N) {
+        (self.get_x(), self.get_y(), self.get_z())
+    }
 }
 pub trait Vec4<N: CharMathNumeric<N>, V: Vec4<N, V>>: Vector<N, V> {
     fn new(x: N, y: N, z: N, w: N) -> V;
@@ -621,6 +627,9 @@ pub trait Vec4<N: CharMathNumeric<N>, V: Vec4<N, V>>: Vector<N, V> {
     }
     fn set_w(&mut self, w: N) {
         self.set_value(3, w);
+    }
+    fn as_tuple(&self) -> (N, N, N, N) {
+        (self.get_x(), self.get_y(), self.get_z(), self.get_w())
     }
 }
 

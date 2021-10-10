@@ -1,15 +1,25 @@
+use crate::char_panic;
+use crate::data::buffers::VertexAttrib;
 use crate::input::{Key, MouseButton};
+use crate::platform::{Context, Window};
 use crate::state::State;
 use crate::window::{
-    AbstractWindow, AbstractWindowFactory, EventManager, WindowCreateArgs, WindowEvent,
+    AbstractWindow, AbstractWindowFactory, EventManager, GlBindable, GlBuffer, GlBufferType,
+    GlClearMask, GlContext, GlDrawMode, GlProgram, GlShader, GlShaderLoc, GlShaderType,
+    GlStorageMode, GlVertexArray, WindowCreateArgs, WindowEvent,
 };
+use js_sys::Float32Array;
 use std::cell::RefCell;
+use std::mem::size_of;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
-    Event, HtmlCanvasElement, KeyboardEvent, MouseEvent, WebGl2RenderingContext, WheelEvent,
+    Event, HtmlCanvasElement, KeyboardEvent, MouseEvent, WebGl2RenderingContext,
+    WebGlBuffer as JsSysWebGlBuffer, WebGlProgram as JsSysWebGlProgram,
+    WebGlShader as JsSysWebGlShader, WebGlUniformLocation as JsSysWebGlUniformLocation,
+    WebGlVertexArrayObject as JsSysWebGlVertexArray, WheelEvent,
 };
 
 #[wasm_bindgen]
@@ -18,8 +28,6 @@ extern "C" {
     fn js_log_string(a: &str);
     #[wasm_bindgen(js_namespace = console, js_name = warn)]
     fn js_warn_string(a: &str);
-    #[wasm_bindgen(js_namespace = console, js_name = error)]
-    fn js_err_string(a: &str);
 
     fn alert(a: &str);
 }
@@ -79,7 +87,6 @@ impl WebEventListener {
 pub struct WebGlWindow {
     context: Arc<Mutex<WebGl2RenderingContext>>,
     canvas: Arc<Mutex<HtmlCanvasElement>>,
-    clear_mask: u32,
     should_close: bool,
     event_listener: Option<Arc<Mutex<WebEventListener>>>,
     events: Vec<WindowEvent>,
@@ -92,12 +99,22 @@ impl WebGlWindow {
         Self::create(args)
     }
     #[wasm_bindgen(js_name = setClearColour)]
-    pub fn wset_clear_colour(&mut self, r: f64, g: f64, b: f64, a: f64) {
+    pub fn wset_clear_colour(&mut self, r: f32, g: f32, b: f32, a: f32) {
         self.set_clear_colour(r, g, b, a);
     }
     #[wasm_bindgen(js_name = clear)]
-    pub fn wclear(&mut self) {
-        self.clear();
+    pub fn wclear(&mut self, int_mask: i32) {
+        let mut mask = Vec::<GlClearMask>::with_capacity(3);
+        if int_mask & (GlClearMask::Color as i32) == 1 {
+            mask.push(GlClearMask::Color);
+        }
+        if int_mask & (GlClearMask::Depth as i32) == 1 {
+            mask.push(GlClearMask::Depth);
+        }
+        if int_mask & (GlClearMask::Stencil as i32) == 1 {
+            mask.push(GlClearMask::Stencil);
+        }
+        self.clear(&mask);
     }
     #[wasm_bindgen(js_name = getEvents)]
     pub fn wget_event_set(&mut self) -> WebWindowEventSet {
@@ -115,17 +132,25 @@ impl WebGlWindow {
             if let Ok(mut listener) = mutex.lock() {
                 listener.clear_listeners();
             } else {
-                js_err_string(&"Could not destroy window: mutex posioned.");
+                char_panic!("JS: Could not destroy window: mutex posioned.");
             }
         } else {
-            js_warn_string(&"No window event listener found to destroy.");
+            js_warn_string(&"JS: No window event listener found to destroy.");
         }
+    }
+    #[wasm_bindgen(js_name = setResolution)]
+    pub fn wset_resolution(&mut self, wid: f64, hei: f64) {
+        self.set_resolution((wid as i32, hei as i32));
+    }
+    #[wasm_bindgen(js_name = setSize)]
+    pub fn wset_size(&mut self, wid: f64, hei: f64) {
+        self.set_size((wid as i32, hei as i32));
     }
 }
 
 impl AbstractWindow for WebGlWindow {
-    fn set_resolution(&self, res: (i32, i32)) {
-        self.context.lock().unwrap().viewport(0, 0, res.0, res.1);
+    fn get_gl_context(&mut self) -> Context {
+        Context::new(self)
     }
     fn set_fullscreen(&mut self) {
         // Does nothing on WASM
@@ -166,15 +191,6 @@ impl AbstractWindow for WebGlWindow {
     fn swap_buffers(&mut self) {
         // Does nothing on WASM
     }
-    fn set_clear_colour(&mut self, r: f64, g: f64, b: f64, a: f64) {
-        self.context
-            .lock()
-            .unwrap()
-            .clear_color(r as f32, g as f32, b as f32, a as f32);
-    }
-    fn clear(&mut self) {
-        self.context.lock().unwrap().clear(self.clear_mask)
-    }
     fn get_size(&self) -> (i32, i32) {
         let bounding_rect = self.canvas.lock().unwrap().get_bounding_client_rect();
         (bounding_rect.width() as i32, bounding_rect.height() as i32)
@@ -196,7 +212,6 @@ impl AbstractWindowFactory for WebGlWindow {
                             context.dyn_into::<WebGl2RenderingContext>().unwrap(),
                         )),
                         canvas: Arc::new(Mutex::new(canvas)),
-                        clear_mask: WebGl2RenderingContext::COLOR_BUFFER_BIT,
                         should_close: false,
                         event_listener: None,
                         events: Vec::new(),
@@ -211,19 +226,16 @@ impl AbstractWindowFactory for WebGlWindow {
                         .add_event(WindowEvent::Size(window.get_size().0, window.get_size().1));
                     window
                 } else {
-                    js_err_string(&"Platform may not support OpenGL ES 2.0");
-                    panic!();
+                    char_panic!("WebGL: Platform may not support WebGL2.");
                 }
             } else {
-                js_err_string(&format!("Element ID \"{}\" is not a canvas.", &args.title));
-                panic!();
+                char_panic!("DOM: Element ID \"{}\" is not a canvas.", &args.title);
             }
         } else {
-            js_err_string(&format!(
-                "Could not find canvas \"{}\" on document.",
+            char_panic!(
+                "DOM: Could not find canvas \"{}\" on document.",
                 &args.title
-            ));
-            panic!();
+            );
         }
     }
 }
@@ -263,7 +275,7 @@ impl WebGlWindow {
                         if let Ok(mut listener) = mutex.lock() {
                             listener.clear_listeners();
                         } else {
-                            js_err_string(&"Cannot remove event listeners: mutex poisoned.");
+                            char_panic!("DOM: Cannot remove event listeners: mutex poisoned.");
                         }
                     }
                     js_log_string("State destroyed.");
@@ -365,10 +377,10 @@ impl WebGlWindow {
             let canvas_arc = Arc::clone(&self.canvas);
             listener.add_canvas_listener(CanvasEventListener::new(canvas_arc, name, cl));
         } else {
-            js_err_string(&format!(
-                "Could not add canvas event listener; mutex poisoned: ({}).",
+            char_panic!(
+                "DOM: Could not add canvas event listener: mutex poisoned: ({}).",
                 name
-            ));
+            );
         }
     }
     #[inline]
@@ -380,10 +392,10 @@ impl WebGlWindow {
         if let Ok(mut listener) = mutex.lock() {
             listener.add_window_listener(WindowEventListener::new(name, cl));
         } else {
-            js_err_string(&format!(
-                "Could not add window event listener; mutex poisoned: ({}).",
+            char_panic!(
+                "DOM: Could not add window event listener: mutex poisoned: ({}).",
                 name
-            ));
+            );
         }
     }
     #[inline]
@@ -420,7 +432,7 @@ impl WebGlWindow {
             if let Ok(mut state) = state_clone.lock() {
                 state.add_event(WindowEvent::Close);
             } else {
-                js_err_string(&"Could not add closing events: mutex posioned.");
+                char_panic!("DOM: Could not add closing events: mutex posioned.");
             }
         }) as Box<dyn FnMut(_)>);
         Self::add_win_event_listener(lstnr, "beforeunload", cl);
@@ -644,5 +656,459 @@ pub fn js_mouse_to_mouse(m: &MouseEvent) -> MouseButton {
     match button {
         0..=4 => MouseButton::from_i32(button),
         _ => MouseButton::Unknown,
+    }
+}
+
+#[wasm_bindgen]
+pub struct WebGlContext {
+    context: Arc<Mutex<WebGl2RenderingContext>>,
+}
+impl GlContext for WebGlContext {
+    fn new(w: &mut Window) -> Self {
+        Self {
+            context: w.get_context_arc(),
+        }
+    }
+
+    fn clear(&self, mask: &[GlClearMask]) {
+        use GlClearMask::*;
+        let mut gl_mask = 0;
+        for i in 0..mask.len() {
+            gl_mask |= match mask[i] {
+                Color => WebGl2RenderingContext::COLOR_BUFFER_BIT,
+                Depth => WebGl2RenderingContext::DEPTH_BUFFER_BIT,
+                Stencil => WebGl2RenderingContext::STENCIL_BUFFER_BIT,
+                _ => 0,
+            };
+        }
+        self.context.lock().unwrap().clear(gl_mask);
+    }
+    fn clear_color(&self, r: f32, g: f32, b: f32, a: f32) {
+        self.context.lock().unwrap().clear_color(r, g, b, a);
+    }
+    fn viewport(&self, x: i32, y: i32, w: u32, h: u32) {
+        self.context
+            .lock()
+            .unwrap()
+            .viewport(x, y, w as i32, h as i32);
+    }
+}
+
+#[wasm_bindgen]
+pub struct WebGlBuffer {
+    buff: Option<JsSysWebGlBuffer>,
+    context: Arc<Mutex<WebGl2RenderingContext>>,
+    buff_type: GlBufferType,
+    gl_buff: u32,
+}
+impl WebGlBuffer {
+    fn buff_type(t: &GlBufferType) -> u32 {
+        use GlBufferType::*;
+        match t {
+            ArrayBuffer => WebGl2RenderingContext::ARRAY_BUFFER,
+            CopyReadBuffer => WebGl2RenderingContext::COPY_READ_BUFFER,
+            CopyWriteBuffer => WebGl2RenderingContext::COPY_WRITE_BUFFER,
+            ElementArrayBuffer => WebGl2RenderingContext::ELEMENT_ARRAY_BUFFER,
+            PixelPackBuffer => WebGl2RenderingContext::PIXEL_PACK_BUFFER,
+            PixelUnpackBuffer => WebGl2RenderingContext::PIXEL_UNPACK_BUFFER,
+            TransformFeedbackBuffer => WebGl2RenderingContext::TRANSFORM_FEEDBACK_BUFFER,
+            UniformBuffer => WebGl2RenderingContext::UNIFORM_BUFFER,
+            _ => {
+                char_panic!("WebGL: Buffer type \"{:?}\" not supported.", t);
+            }
+        }
+    }
+    fn storage_mode(t: &GlStorageMode) -> u32 {
+        use GlStorageMode::*;
+        match t {
+            Static => WebGl2RenderingContext::STATIC_DRAW,
+            Dynamic => WebGl2RenderingContext::DYNAMIC_DRAW,
+        }
+    }
+}
+impl GlBindable for WebGlBuffer {
+    fn bind(&self) {
+        self.context
+            .lock()
+            .unwrap()
+            .bind_buffer(self.gl_buff, self.buff.as_ref());
+    }
+    fn unbind(&self) {
+        self.context.lock().unwrap().bind_buffer(self.gl_buff, None);
+    }
+}
+impl GlBuffer for WebGlBuffer {
+    fn new(w: &Window, tp: GlBufferType) -> Self {
+        Self {
+            buff: w.get_context_arc().lock().unwrap().create_buffer(),
+            context: w.get_context_arc(),
+            buff_type: tp,
+            gl_buff: Self::buff_type(&tp),
+        }
+    }
+    fn buffer_data(&self, size: usize, data: *const f32, mode: GlStorageMode) {
+        unsafe {
+            let positions_array_buf_view =
+                Float32Array::view_mut_raw(data as *mut f32, size / size_of::<f32>());
+            self.context
+                .lock()
+                .unwrap()
+                .buffer_data_with_array_buffer_view(
+                    self.gl_buff,
+                    &positions_array_buf_view,
+                    Self::storage_mode(&mode),
+                );
+        }
+    }
+    fn buffer_sub_data(&self, start: usize, size: usize, data: *const f32) {
+        unsafe {
+            let positions_array_buf_view =
+                Float32Array::view_mut_raw(data as *mut f32, size / size_of::<f32>());
+            self.context
+                .lock()
+                .unwrap()
+                .buffer_sub_data_with_i32_and_array_buffer_view(
+                    self.gl_buff,
+                    start as i32,
+                    &positions_array_buf_view,
+                );
+        }
+    }
+    fn get_buffer_sub_data(&self, start: usize, size: usize, recv: *mut f32) {
+        unsafe {
+            let positions_array_buf_view = Float32Array::view_mut_raw(recv, size);
+            self.context
+                .lock()
+                .unwrap()
+                .get_buffer_sub_data_with_i32_and_array_buffer_view(
+                    self.gl_buff,
+                    start as i32,
+                    &positions_array_buf_view,
+                );
+        }
+    }
+    fn get_type(&self) -> GlBufferType {
+        self.buff_type
+    }
+    fn delete(&mut self) {
+        self.context
+            .lock()
+            .unwrap()
+            .delete_buffer(self.buff.as_ref());
+        self.buff = None;
+    }
+}
+impl Drop for WebGlBuffer {
+    fn drop(&mut self) {
+        self.delete();
+    }
+}
+
+#[wasm_bindgen]
+pub struct WebGlShader {
+    shader: JsSysWebGlShader,
+    context: Arc<Mutex<WebGl2RenderingContext>>,
+    stype: GlShaderType,
+}
+impl WebGlShader {
+    fn shader_type(t: &GlShaderType) -> u32 {
+        use GlShaderType::*;
+        match t {
+            Vertex => WebGl2RenderingContext::VERTEX_SHADER,
+            Fragment => WebGl2RenderingContext::FRAGMENT_SHADER,
+            _ => {
+                char_panic!("WebGL: shader type \"{:?}\" not supported.", t);
+            }
+        }
+    }
+    fn get_shader_ref(&self) -> &JsSysWebGlShader {
+        &self.shader
+    }
+}
+impl GlShader for WebGlShader {
+    fn new(w: &Window, st: GlShaderType) -> Self {
+        let shader_type_u32 = Self::shader_type(&st);
+        Self {
+            shader: w
+                .get_context_arc()
+                .lock()
+                .unwrap()
+                .create_shader(shader_type_u32)
+                .unwrap_or_else(|| {
+                    char_panic!("WebGL: Could not create shader.");
+                }),
+            stype: st,
+            context: w.get_context_arc(),
+        }
+    }
+    fn shader_source(&self, src: &str) {
+        self.context
+            .lock()
+            .unwrap()
+            .shader_source(&self.shader, src);
+    }
+    fn compile(&self) {
+        self.context.lock().unwrap().compile_shader(&self.shader);
+    }
+    fn get_compile_status(&self) -> Option<String> {
+        let gl = self.context.lock().unwrap();
+        if !gl
+            .get_shader_parameter(&self.shader, WebGl2RenderingContext::COMPILE_STATUS)
+            .as_bool()
+            .unwrap_or(true)
+        {
+            Some(
+                format!(
+                    "WebGL: Shader compilation error: {}",
+                    gl.get_shader_info_log(&self.shader)
+                        .unwrap_or_else(|| String::from("Unknown error."))
+                )
+                .into(),
+            )
+        } else {
+            None
+        }
+    }
+    fn get_type(&self) -> GlShaderType {
+        self.stype
+    }
+    fn delete(&mut self) {
+        self.context
+            .lock()
+            .unwrap()
+            .delete_shader(Some(&self.shader));
+    }
+}
+impl Drop for WebGlShader {
+    fn drop(&mut self) {
+        self.delete();
+    }
+}
+
+#[wasm_bindgen]
+pub struct WebGlVertexArray {
+    vao: Option<JsSysWebGlVertexArray>,
+    context: Arc<Mutex<WebGl2RenderingContext>>,
+}
+impl GlBindable for WebGlVertexArray {
+    fn bind(&self) {
+        self.context
+            .lock()
+            .unwrap()
+            .bind_vertex_array(self.vao.as_ref());
+    }
+    fn unbind(&self) {
+        self.context.lock().unwrap().bind_vertex_array(None);
+    }
+}
+impl GlVertexArray for WebGlVertexArray {
+    fn new(w: &Window) -> Self {
+        Self {
+            vao: w.get_context_arc().lock().unwrap().create_vertex_array(),
+            context: w.get_context_arc(),
+        }
+    }
+    fn attrib_ptr(&self, v: &VertexAttrib) {
+        self.context.lock().unwrap().vertex_attrib_pointer_with_i32(
+            v.0,
+            v.1 as i32,
+            WebGl2RenderingContext::FLOAT,
+            false,
+            v.2 as i32,
+            v.3 as i32,
+        );
+        self.context.lock().unwrap().enable_vertex_attrib_array(v.0);
+    }
+    fn remove_attrib_ptr(&self, v: &VertexAttrib) {
+        self.context
+            .lock()
+            .unwrap()
+            .disable_vertex_attrib_array(v.0);
+    }
+    fn delete(&mut self) {
+        self.context
+            .lock()
+            .unwrap()
+            .delete_vertex_array(self.vao.as_ref());
+        self.vao = None;
+    }
+}
+impl Drop for WebGlVertexArray {
+    fn drop(&mut self) {
+        self.delete();
+    }
+}
+
+#[wasm_bindgen]
+pub struct WebGlShaderLoc {
+    loc: Option<JsSysWebGlUniformLocation>,
+}
+impl WebGlShaderLoc {
+    pub fn loc_ref(&self) -> Option<&JsSysWebGlUniformLocation> {
+        self.loc.as_ref()
+    }
+}
+impl GlShaderLoc for WebGlShaderLoc {}
+
+#[wasm_bindgen]
+pub struct WebGlProgram {
+    program: Option<JsSysWebGlProgram>,
+    context: Arc<Mutex<WebGl2RenderingContext>>,
+}
+impl WebGlProgram {
+    fn draw_mode(m: &GlDrawMode) -> u32 {
+        use GlDrawMode::*;
+        match m {
+            Triangles => WebGl2RenderingContext::TRIANGLES,
+            Points => WebGl2RenderingContext::POINTS,
+            LineStrip => WebGl2RenderingContext::LINE_STRIP,
+            LineLoop => WebGl2RenderingContext::LINE_LOOP,
+            Lines => WebGl2RenderingContext::LINES,
+            TriangleStrip => WebGl2RenderingContext::TRIANGLE_STRIP,
+            TriangleFan => WebGl2RenderingContext::TRIANGLE_FAN,
+        }
+    }
+}
+impl GlBindable for WebGlProgram {
+    fn bind(&self) {
+        self.context
+            .lock()
+            .unwrap()
+            .use_program(self.program.as_ref());
+    }
+    fn unbind(&self) {
+        self.context.lock().unwrap().use_program(None);
+    }
+}
+impl GlProgram for WebGlProgram {
+    type ShaderLoc = WebGlShaderLoc;
+    type Shader = WebGlShader;
+
+    fn new(w: &Window) -> Self {
+        Self {
+            program: w.get_context_arc().lock().unwrap().create_program(),
+            context: w.get_context_arc(),
+        }
+    }
+    fn draw_arrays(&self, mode: GlDrawMode, start: i32, len: i32) {
+        self.context
+            .lock()
+            .unwrap()
+            .draw_arrays(Self::draw_mode(&mode), start, len);
+    }
+    fn shader_loc(&self, name: &str) -> Self::ShaderLoc {
+        Self::ShaderLoc {
+            loc: self
+                .context
+                .lock()
+                .unwrap()
+                .get_uniform_location(self.program.as_ref().unwrap(), name),
+        }
+    }
+    fn attach_shader(&self, shader: &Self::Shader) {
+        self.context
+            .lock()
+            .unwrap()
+            .attach_shader(self.program.as_ref().unwrap(), shader.get_shader_ref());
+    }
+    fn link_program(&self) {
+        self.context
+            .lock()
+            .unwrap()
+            .link_program(self.program.as_ref().unwrap());
+    }
+    fn get_link_status(&self) -> Option<String> {
+        let gl = self.context.lock().unwrap();
+        if !gl
+            .get_program_parameter(
+                self.program.as_ref().unwrap(),
+                WebGl2RenderingContext::LINK_STATUS,
+            )
+            .as_bool()
+            .unwrap_or(true)
+        {
+            Some(
+                format!(
+                    "WebGL: Program compilation error: {}",
+                    gl.get_program_info_log(self.program.as_ref().unwrap())
+                        .unwrap_or_else(|| String::from("Unknown error."))
+                )
+                .into(),
+            )
+        } else {
+            None
+        }
+    }
+    fn uniform_4f(&self, loc: &Self::ShaderLoc, v: (f32, f32, f32, f32)) {
+        self.context
+            .lock()
+            .unwrap()
+            .uniform4f(loc.loc_ref(), v.0, v.1, v.2, v.3);
+    }
+    fn uniform_3f(&self, loc: &Self::ShaderLoc, v: (f32, f32, f32)) {
+        self.context
+            .lock()
+            .unwrap()
+            .uniform3f(loc.loc_ref(), v.0, v.1, v.2);
+    }
+    fn uniform_2f(&self, loc: &Self::ShaderLoc, v: (f32, f32)) {
+        self.context
+            .lock()
+            .unwrap()
+            .uniform2f(loc.loc_ref(), v.0, v.1);
+    }
+    fn uniform_1f(&self, loc: &Self::ShaderLoc, v: f32) {
+        self.context.lock().unwrap().uniform1f(loc.loc.as_ref(), v);
+    }
+    fn uniform_4i(&self, loc: &Self::ShaderLoc, v: (i32, i32, i32, i32)) {
+        self.context
+            .lock()
+            .unwrap()
+            .uniform4i(loc.loc_ref(), v.0, v.1, v.2, v.3);
+    }
+    fn uniform_3i(&self, loc: &Self::ShaderLoc, v: (i32, i32, i32)) {
+        self.context
+            .lock()
+            .unwrap()
+            .uniform3i(loc.loc_ref(), v.0, v.1, v.2);
+    }
+    fn uniform_2i(&self, loc: &Self::ShaderLoc, v: (i32, i32)) {
+        self.context
+            .lock()
+            .unwrap()
+            .uniform2i(loc.loc_ref(), v.0, v.1);
+    }
+    fn uniform_1i(&self, loc: &Self::ShaderLoc, v: i32) {
+        self.context.lock().unwrap().uniform1i(loc.loc_ref(), v);
+    }
+    fn uniform_mat4f(&self, loc: &Self::ShaderLoc, v: &[f32]) {
+        self.context
+            .lock()
+            .unwrap()
+            .uniform_matrix4fv_with_f32_array(loc.loc_ref(), false, v);
+    }
+    fn uniform_mat3f(&self, loc: &Self::ShaderLoc, v: &[f32]) {
+        self.context
+            .lock()
+            .unwrap()
+            .uniform_matrix3fv_with_f32_array(loc.loc_ref(), false, v);
+    }
+    fn uniform_mat2f(&self, loc: &Self::ShaderLoc, v: &[f32]) {
+        self.context
+            .lock()
+            .unwrap()
+            .uniform_matrix2fv_with_f32_array(loc.loc_ref(), false, v);
+    }
+    fn delete(&mut self) {
+        self.context
+            .lock()
+            .unwrap()
+            .delete_program(self.program.as_ref());
+        self.program = None;
+    }
+}
+impl Drop for WebGlProgram {
+    fn drop(&mut self) {
+        self.delete();
     }
 }

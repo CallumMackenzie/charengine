@@ -28,7 +28,7 @@ impl FrameManager {
     pub fn current_time_micro() -> u128 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("Time went backwards.")
+            .expect("FrameManager: Time went backwards.")
             .as_micros() as u128
     }
     pub fn next_frame_ready(&mut self) -> bool {

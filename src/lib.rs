@@ -2,8 +2,8 @@
 mod tests {
     use charmath::linear::matrix::*;
     // use charmath::linear::vector::*;
-    use charwin::data::c3d::*;
-    use charwin::data::*;
+    use charwin::data::buffers::*;
+    // use charwin::data::*;
     use charwin::input::*;
     use charwin::platform::*;
     use charwin::state::*;
@@ -28,48 +28,49 @@ mod tests {
     }
     impl State for App {
         fn initialize(&mut self, win: &mut Window, _manager: &mut dyn EventManager) -> i32 {
-            win.set_clear_colour(0.1, 0.1, 0.5, 1.0);
+            win.set_clear_colour(0.2, 0.2, 0.2, 1.0);
             let vs = "#version 300 es
             precision highp float;
             layout (location = 0) in vec3 aPos;
             uniform mat2 rot;
             uniform vec2 pos;
+            uniform float aspect;
             void main() {
-                gl_Position = vec4(aPos.xy * rot + pos, 0.0, 1.0);
+                vec2 trns = aPos.xy * rot + pos;
+                gl_Position = vec4(trns.x, trns.y * aspect, 0.0, 1.0);
+                // gl_Position = vec4(aPos.xy, 0.0, 1.0);
             }
             ";
             let fs = "#version 300 es
             precision mediump float;
             out vec4 FragColor;
             void main() {
-               FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);
+               FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
             }
             ";
-            let cpu_tris = TriCPUBuffer::<VertexV>::from_f32_array(&[
+            let cpu_tris = TriCPUBuffer::from_f32_array(&[
                 -0.5, -0.5, 0.0, -0.5, 0.5, 0.0, 0.5, 0.5, 0.0, -0.5, -0.5, 0.0, 0.5, 0.5, 0.0,
                 0.5, -0.5, 0.0,
             ]);
             self.tri_buffer = Some(cpu_tris.to_gpu_buffer(win));
-            if let Some(buff) = self.tri_buffer.as_ref() {
-                buff.set_std_attib_ptrs();
-            }
             self.shader = Some(GPUShader::from_sources(win, &vs, &fs));
             0
         }
         fn update(&mut self, win: &mut Window, eng: &mut dyn EventManager, delta: f64) -> i32 {
             win.poll_events();
             if eng.key_pressed(Key::Q) {
-                self.rot += 1.0 * delta as f32;
+                self.rot += 2.0 * delta as f32;
             }
             if eng.key_pressed(Key::E) {
-                self.rot -= 1.0 * delta as f32;
+                self.rot -= 2.0 * delta as f32;
             }
             if let (Some(shader), Some(buff)) = (self.shader.as_ref(), self.tri_buffer.as_ref()) {
-                win.clear();
+                win.clear(&[GlClearMask::Color]);
                 shader.use_shader();
-                shader.set_mat2f32("rot", &matrices::rotation_2d(self.rot));
-                shader.set_2f32("pos", &eng.gl_mouse_vec());
-                buff.bind_vao();
+                shader.set_mat2f("rot", &matrices::rotation_2d(self.rot));
+                shader.set_vec2f("pos", &eng.gl_mouse_vec());
+                shader.set_float("aspect", eng.win_aspect());
+                buff.vao.bind();
                 shader.draw(buff.n_tris());
             }
             win.swap_buffers();

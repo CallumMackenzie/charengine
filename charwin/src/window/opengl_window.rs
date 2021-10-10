@@ -1,23 +1,26 @@
 use glfw::{
-    Context as GlContext, Glfw, Window as GlfwWindow, WindowEvent as GlWindowEvent,
+    Context as GlfwContext, Glfw, Window as GlfwWindow, WindowEvent as GlWindowEvent,
     WindowMode as GlWindowMode,
 };
-
+use std::ffi::CString;
+use std::ptr;
 extern crate gl;
+use crate::data::buffers::VertexAttrib;
 use crate::input::{Key, MouseButton};
+use crate::platform::{Context, Window};
 use crate::state::{FrameManager, State};
 use crate::window::{
-    AbstractWindow, AbstractWindowFactory, EventManager, WindowCreateArgs, WindowEvent,
-    WindowSizeMode,
+    AbstractWindow, AbstractWindowFactory, EventManager, GlBindable, GlBuffer, GlBufferType,
+    GlClearMask, GlContext, GlDrawMode, GlProgram, GlShader, GlShaderLoc, GlShaderType,
+    GlStorageMode, GlVertexArray, WindowCreateArgs, WindowEvent, WindowSizeMode,
 };
-use gl::types::{GLenum, GLfloat, GLsizei};
+use gl::types::{GLbitfield, GLchar, GLenum, GLint, GLintptr, GLsizei, GLsizeiptr, GLuint, GLvoid};
 
 pub struct NativeGlWindow {
     glfw: Glfw,
     window: GlfwWindow,
     gl_events: std::sync::mpsc::Receiver<(f64, GlWindowEvent)>,
     events: Vec<WindowEvent>,
-    clear_mask: GLenum,
 }
 
 impl NativeGlWindow {
@@ -57,31 +60,31 @@ impl NativeGlWindow {
             while err != gl::NO_ERROR {
                 match err {
                     gl::INVALID_ENUM => {
-                        panic!("GL_INVALID_ENUM (0x0500)");
+                        panic!("OpenGL: GL_INVALID_ENUM (0x0500)");
                     }
                     gl::INVALID_VALUE => {
-                        panic!("GL_INVALID_VALUE (0x0501)");
+                        panic!("OpenGL: GL_INVALID_VALUE (0x0501)");
                     }
                     gl::INVALID_OPERATION => {
-                        panic!("GL_INVALID_OPERATION (0x0502)");
+                        panic!("OpenGL: GL_INVALID_OPERATION (0x0502)");
                     }
                     gl::STACK_OVERFLOW => {
-                        panic!("GL_STACK_OVERFLOW (0x0503)");
+                        panic!("OpenGL: GL_STACK_OVERFLOW (0x0503)");
                     }
                     gl::STACK_UNDERFLOW => {
-                        panic!("GL_STACK_UNDERFLOW (0x0504)");
+                        panic!("OpenGL: GL_STACK_UNDERFLOW (0x0504)");
                     }
                     gl::OUT_OF_MEMORY => {
-                        panic!("GL_OUT_OF_MEMORY (0x0505)");
+                        panic!("OpenGL: GL_OUT_OF_MEMORY (0x0505)");
                     }
                     gl::INVALID_FRAMEBUFFER_OPERATION => {
-                        panic!("GL_INVALID_FRAMEBUFFER_OPERATION (0x0506)");
+                        panic!("OpenGL: GL_INVALID_FRAMEBUFFER_OPERATION (0x0506)");
                     }
                     gl::CONTEXT_LOST => {
-                        panic!("GL_CONTEXT_LOST (0x0507)");
+                        panic!("OpenGL: GL_CONTEXT_LOST (0x0507)");
                     }
                     _ => {
-                        println!("OpenGL error code: {}.", err);
+                        println!("OpenGL: Error code: {}.", err);
                     }
                 }
                 err = gl::GetError();
@@ -91,10 +94,8 @@ impl NativeGlWindow {
 }
 
 impl AbstractWindow for NativeGlWindow {
-    fn set_resolution(&self, res: (i32, i32)) {
-        unsafe {
-            gl::Viewport(0, 0, res.0 as GLsizei, res.1 as GLsizei);
-        }
+    fn get_gl_context(&mut self) -> Context {
+        Context::new(self)
     }
     fn set_fullscreen(&mut self) {
         unimplemented!();
@@ -133,16 +134,6 @@ impl AbstractWindow for NativeGlWindow {
     fn close(&mut self) {
         self.window.set_should_close(true);
     }
-    fn set_clear_colour(&mut self, r: f64, g: f64, b: f64, a: f64) {
-        unsafe {
-            gl::ClearColor(r as GLfloat, g as GLfloat, b as GLfloat, a as GLfloat);
-        }
-    }
-    fn clear(&mut self) {
-        unsafe {
-            gl::Clear(self.clear_mask);
-        }
-    }
     fn get_size(&self) -> (i32, i32) {
         self.window.get_size()
     }
@@ -153,14 +144,16 @@ impl AbstractWindow for NativeGlWindow {
 
 impl AbstractWindowFactory for NativeGlWindow {
     fn create(args: &WindowCreateArgs) -> Self {
-        let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
+        let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).expect("GLFW: Initialization failed.");
         let (mut glfw_window, glfw_events) = glfw
             .create_window(args.width, args.height, &args.title, GlWindowMode::Windowed)
-            .expect("Failed to create a GLFW window.");
+            .expect("GLFW: Failed to create a window.");
         if args.mode == WindowSizeMode::Fullscreen {
             glfw.with_primary_monitor(|_: &mut _, m: Option<&glfw::Monitor>| {
-                let monitor = m.unwrap();
-                let mode: glfw::VidMode = monitor.get_video_mode().unwrap();
+                let monitor = m.expect("GLFW: Could not get primary monitor.");
+                let mode: glfw::VidMode = monitor
+                    .get_video_mode()
+                    .expect("GLFW: Could not get primary monitor video mode.");
                 glfw_window.set_monitor(
                     glfw::WindowMode::FullScreen(&monitor),
                     0,
@@ -178,7 +171,6 @@ impl AbstractWindowFactory for NativeGlWindow {
             glfw,
             window: glfw_window,
             gl_events: glfw_events,
-            clear_mask: gl::COLOR_BUFFER_BIT,
             events: Vec::new(),
         }
     }
@@ -215,5 +207,437 @@ fn gl_event_to_window_event(gl_event: GlWindowEvent) -> Option<WindowEvent> {
         None
     } else {
         Some(event)
+    }
+}
+
+pub struct NativeGlContext {}
+impl GlContext for NativeGlContext {
+    fn new(_: &mut Window) -> Self {
+        Self {}
+    }
+
+    fn clear(&self, mask: &[GlClearMask]) {
+        use GlClearMask::*;
+        let mut glmask: GLbitfield = 0;
+        for i in 0..mask.len() {
+            glmask |= match mask[i] {
+                Color => gl::COLOR_BUFFER_BIT,
+                Depth => gl::DEPTH_BUFFER_BIT,
+                Stencil => gl::STENCIL_BUFFER_BIT,
+                _ => 0,
+            }
+        }
+        unsafe {
+            gl::Clear(glmask);
+        }
+    }
+    fn clear_color(&self, r: f32, g: f32, b: f32, a: f32) {
+        unsafe {
+            gl::ClearColor(r, g, b, a);
+        }
+    }
+    fn viewport(&self, x: i32, y: i32, w: u32, h: u32) {
+        unsafe {
+            gl::Viewport(x, y, w as i32, h as i32);
+        }
+    }
+}
+
+pub struct NativeGlBuffer {
+    pub vbo: GLuint,
+    buff_type: GlBufferType,
+    gl_buff_type: GLenum,
+}
+impl Drop for NativeGlBuffer {
+    fn drop(&mut self) {
+        self.delete();
+    }
+}
+impl NativeGlBuffer {
+    fn buff_type(t: &GlBufferType) -> GLenum {
+        use GlBufferType::*;
+        match t {
+            ArrayBuffer => gl::ARRAY_BUFFER,
+            AtomicCounterBuffer => gl::ATOMIC_COUNTER_BUFFER,
+            CopyReadBuffer => gl::COPY_READ_BUFFER,
+            CopyWriteBuffer => gl::COPY_WRITE_BUFFER,
+            DispatchIndirectBuffer => gl::DISPATCH_INDIRECT_BUFFER,
+            DrawIndirectBuffer => gl::DRAW_INDIRECT_BUFFER,
+            ElementArrayBuffer => gl::ELEMENT_ARRAY_BUFFER,
+            PixelPackBuffer => gl::PIXEL_PACK_BUFFER,
+            PixelUnpackBuffer => gl::PIXEL_UNPACK_BUFFER,
+            QueryBuffer => gl::QUERY_BUFFER,
+            ShaderStorageBuffer => gl::SHADER_STORAGE_BUFFER,
+            TextureBuffer => gl::TEXTURE_BUFFER,
+            TransformFeedbackBuffer => gl::TRANSFORM_FEEDBACK_BUFFER,
+            UniformBuffer => gl::UNIFORM_BUFFER,
+        }
+    }
+    fn storage_mode(t: &GlStorageMode) -> GLenum {
+        use GlStorageMode::*;
+        match t {
+            Static => gl::STATIC_DRAW,
+            Dynamic => gl::DYNAMIC_DRAW,
+        }
+    }
+}
+impl GlBindable for NativeGlBuffer {
+    fn bind(&self) {
+        unsafe {
+            gl::BindBuffer(Self::buff_type(&self.buff_type), self.vbo);
+        }
+    }
+    fn unbind(&self) {
+        unsafe {
+            gl::BindBuffer(Self::buff_type(&self.buff_type), gl::NONE);
+        }
+    }
+}
+impl GlBuffer for NativeGlBuffer {
+    fn new(_: &Window, buff_type: GlBufferType) -> Self {
+        let mut v = gl::NONE;
+        unsafe {
+            gl::GenBuffers(1, &mut v);
+        }
+        Self {
+            vbo: v,
+            buff_type,
+            gl_buff_type: Self::buff_type(&buff_type),
+        }
+    }
+    fn get_type(&self) -> GlBufferType {
+        self.buff_type
+    }
+    fn buffer_data(&self, size: usize, data: *const f32, mode: GlStorageMode) {
+        unsafe {
+            gl::BufferData(
+                self.gl_buff_type,
+                size as isize,
+                data as *const GLvoid,
+                Self::storage_mode(&mode),
+            );
+        }
+    }
+    fn buffer_sub_data(&self, start: usize, size: usize, data: *const f32) {
+        unsafe {
+            gl::BufferSubData(
+                self.gl_buff_type,
+                start as GLintptr,
+                size as GLsizeiptr,
+                data as *const GLvoid,
+            );
+        }
+    }
+    fn get_buffer_sub_data(&self, start: usize, size: usize, recv: *mut f32) {
+        unsafe {
+            gl::GetBufferSubData(
+                self.gl_buff_type,
+                start as GLintptr,
+                size as GLsizeiptr,
+                recv as *mut GLvoid,
+            );
+        }
+    }
+    fn delete(&mut self) {
+        unsafe {
+            gl::DeleteBuffers(1, &mut self.vbo);
+        }
+    }
+}
+
+pub struct NativeGlVertexArray {
+    pub vao: GLuint,
+}
+impl Drop for NativeGlVertexArray {
+    fn drop(&mut self) {
+        self.delete();
+    }
+}
+impl GlBindable for NativeGlVertexArray {
+    fn bind(&self) {
+        unsafe {
+            gl::BindVertexArray(self.vao);
+        }
+    }
+    fn unbind(&self) {
+        unsafe {
+            gl::BindVertexArray(gl::NONE);
+        }
+    }
+}
+impl GlVertexArray for NativeGlVertexArray {
+    fn new(_: &Window) -> Self {
+        let mut v = gl::NONE;
+        unsafe {
+            gl::GenVertexArrays(1, &mut v);
+        }
+        Self { vao: v }
+    }
+    fn attrib_ptr(&self, a: &VertexAttrib) {
+        unsafe {
+            gl::VertexAttribPointer(
+                (a.0) as GLuint,
+                (a.1) as GLint,
+                gl::FLOAT,
+                gl::FALSE,
+                (a.2) as GLsizei,
+                ((a.3) as GLuint) as *const GLvoid,
+            );
+            gl::EnableVertexAttribArray((a.0) as GLuint);
+        }
+    }
+    fn remove_attrib_ptr(&self, a: &VertexAttrib) {
+        unsafe {
+            gl::DisableVertexAttribArray(a.0 as GLuint);
+        }
+    }
+    fn delete(&mut self) {
+        unsafe {
+            gl::DeleteVertexArrays(1, &mut self.vao);
+        }
+        self.vao = gl::NONE;
+    }
+}
+
+pub struct NativeGlShader {
+    pub shader: GLuint,
+    pub stype: GlShaderType,
+}
+impl Drop for NativeGlShader {
+    fn drop(&mut self) {
+        self.delete();
+    }
+}
+impl NativeGlShader {
+    fn shader_type(t: &GlShaderType) -> GLenum {
+        use GlShaderType::*;
+        match t {
+            Vertex => gl::VERTEX_SHADER,
+            Fragment => gl::FRAGMENT_SHADER,
+            TessControl => gl::TESS_CONTROL_SHADER,
+            TessEvaluation => gl::TESS_EVALUATION_SHADER,
+            Geometry => gl::GEOMETRY_SHADER,
+            Compute => gl::COMPUTE_SHADER,
+        }
+    }
+}
+impl GlShader for NativeGlShader {
+    fn new(_: &Window, st: GlShaderType) -> Self {
+        unsafe {
+            Self {
+                shader: gl::CreateShader(Self::shader_type(&st)),
+                stype: st,
+            }
+        }
+    }
+    fn shader_source(&self, src: &str) {
+        unsafe {
+            let c_str = CString::new(src.as_bytes()).unwrap();
+            gl::ShaderSource(self.shader, 1, &c_str.as_ptr(), ptr::null());
+        }
+    }
+    fn compile(&self) {
+        unsafe {
+            gl::CompileShader(self.shader);
+        }
+    }
+    fn get_compile_status(&self) -> Option<String> {
+        unsafe {
+            let mut status = gl::FALSE as GLint;
+            gl::GetShaderiv(self.shader, gl::COMPILE_STATUS, &mut status);
+            if status != (gl::TRUE as GLint) {
+                let mut len = 0;
+                gl::GetShaderiv(self.shader, gl::INFO_LOG_LENGTH, &mut len);
+                let mut buf = Vec::with_capacity(len as usize);
+                buf.set_len((len as usize) - 1);
+                gl::GetShaderInfoLog(
+                    self.shader,
+                    len,
+                    ptr::null_mut(),
+                    buf.as_mut_ptr() as *mut GLchar,
+                );
+                Some(
+                    format!(
+                        "OpenGL: Shader compilation error: {}",
+                        std::str::from_utf8(buf.as_slice())
+                            .ok()
+                            .unwrap_or_else(|| "ShaderInfoLog not valid utf8")
+                    )
+                    .into(),
+                )
+            } else {
+                None
+            }
+        }
+    }
+    fn get_type(&self) -> GlShaderType {
+        self.stype
+    }
+    fn delete(&mut self) {
+        unsafe {
+            gl::DeleteShader(self.shader);
+        }
+        self.shader = gl::NONE;
+    }
+}
+
+pub struct NativeGlShaderLoc {
+    pub loc: GLint,
+}
+impl GlShaderLoc for NativeGlShaderLoc {}
+pub struct NativeGlProgram {
+    pub program: GLuint,
+}
+impl NativeGlProgram {
+    fn draw_mode(m: &GlDrawMode) -> GLenum {
+        use GlDrawMode::*;
+        match m {
+            Triangles => gl::TRIANGLES,
+            Points => gl::POINTS,
+            LineStrip => gl::LINE_STRIP,
+            LineLoop => gl::LINE_LOOP,
+            Lines => gl::LINES,
+            TriangleStrip => gl::TRIANGLE_STRIP,
+            TriangleFan => gl::TRIANGLE_FAN,
+        }
+    }
+}
+impl Drop for NativeGlProgram {
+    fn drop(&mut self) {
+        self.delete();
+    }
+}
+impl GlBindable for NativeGlProgram {
+    fn bind(&self) {
+        unsafe {
+            gl::UseProgram(self.program);
+        }
+    }
+    fn unbind(&self) {
+        unsafe {
+            gl::UseProgram(gl::NONE);
+        }
+    }
+}
+impl GlProgram for NativeGlProgram {
+    type ShaderLoc = NativeGlShaderLoc;
+    type Shader = NativeGlShader;
+    fn new(_: &Window) -> Self {
+        Self {
+            program: unsafe { gl::CreateProgram() },
+        }
+    }
+    fn draw_arrays(&self, mode: GlDrawMode, start: i32, len: i32) {
+        unsafe {
+            gl::DrawArrays(Self::draw_mode(&mode), start, len);
+        }
+    }
+    fn shader_loc(&self, name: &str) -> Self::ShaderLoc {
+        Self::ShaderLoc {
+            loc: unsafe {
+                let c_str = CString::new(name.as_bytes()).unwrap();
+                gl::GetUniformLocation(self.program, c_str.as_ptr() as *const GLchar)
+            },
+        }
+    }
+    fn attach_shader(&self, shader: &Self::Shader) {
+        unsafe {
+            gl::AttachShader(self.program, shader.shader);
+        }
+    }
+    fn link_program(&self) {
+        unsafe {
+            gl::LinkProgram(self.program);
+        }
+    }
+    fn get_link_status(&self) -> Option<String> {
+        unsafe {
+            let mut link_success: GLint = gl::TRUE as GLint;
+            gl::GetProgramiv(self.program, gl::LINK_STATUS, &mut link_success);
+            if link_success != gl::TRUE as GLint {
+                let mut len = 0;
+                gl::GetProgramiv(self.program, gl::INFO_LOG_LENGTH, &mut len);
+                let mut buf = Vec::with_capacity(len as usize);
+                buf.set_len((len as usize) - 1);
+                gl::GetProgramInfoLog(
+                    self.program,
+                    len,
+                    ptr::null_mut(),
+                    buf.as_mut_ptr() as *mut GLchar,
+                );
+                Some(
+                    format!(
+                        "OpenGL program creation error: {}",
+                        std::str::from_utf8(buf.as_slice())
+                            .ok()
+                            .unwrap_or_else(|| "ProgramInfoLog not valid utf8")
+                    )
+                    .into(),
+                )
+            } else {
+                None
+            }
+        }
+    }
+    fn uniform_4f(&self, loc: &Self::ShaderLoc, v: (f32, f32, f32, f32)) {
+        unsafe {
+            gl::Uniform4f(loc.loc, v.0, v.1, v.2, v.3);
+        }
+    }
+    fn uniform_3f(&self, loc: &Self::ShaderLoc, v: (f32, f32, f32)) {
+        unsafe {
+            gl::Uniform3f(loc.loc, v.0, v.1, v.2);
+        }
+    }
+    fn uniform_2f(&self, loc: &Self::ShaderLoc, v: (f32, f32)) {
+        unsafe {
+            gl::Uniform2f(loc.loc, v.0, v.1);
+        }
+    }
+    fn uniform_1f(&self, loc: &Self::ShaderLoc, v: f32) {
+        unsafe {
+            gl::Uniform1f(loc.loc, v);
+        }
+    }
+    fn uniform_4i(&self, loc: &Self::ShaderLoc, v: (i32, i32, i32, i32)) {
+        unsafe {
+            gl::Uniform4i(loc.loc, v.0, v.1, v.2, v.3);
+        }
+    }
+    fn uniform_3i(&self, loc: &Self::ShaderLoc, v: (i32, i32, i32)) {
+        unsafe {
+            gl::Uniform3i(loc.loc, v.0, v.1, v.2);
+        }
+    }
+    fn uniform_2i(&self, loc: &Self::ShaderLoc, v: (i32, i32)) {
+        unsafe {
+            gl::Uniform2i(loc.loc, v.0, v.1);
+        }
+    }
+    fn uniform_1i(&self, loc: &Self::ShaderLoc, v: i32) {
+        unsafe {
+            gl::Uniform1i(loc.loc, v);
+        }
+    }
+    fn uniform_mat4f(&self, loc: &Self::ShaderLoc, v: &[f32]) {
+        unsafe {
+            gl::UniformMatrix4fv(loc.loc, 1, 0, &v[0] as *const f32);
+        }
+    }
+    fn uniform_mat3f(&self, loc: &Self::ShaderLoc, v: &[f32]) {
+        unsafe {
+            gl::UniformMatrix3fv(loc.loc, 1, 0, &v[0] as *const f32);
+        }
+    }
+    fn uniform_mat2f(&self, loc: &Self::ShaderLoc, v: &[f32]) {
+        unsafe {
+            gl::UniformMatrix2fv(loc.loc, 1, 0, &v[0] as *const f32);
+        }
+    }
+    fn delete(&mut self) {
+        unsafe {
+            gl::DeleteProgram(self.program);
+        }
+        self.program = gl::NONE;
     }
 }

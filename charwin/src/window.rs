@@ -6,7 +6,9 @@ pub mod webgl_window;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
+use crate::data::buffers::VertexAttrib;
 use crate::input::{Key, MouseButton};
+use crate::platform::{Context, Window};
 use charmath::linear::vector::{Vec2, Vec2F};
 use std::collections::HashMap;
 
@@ -97,6 +99,15 @@ pub trait EventManager: 'static {
     }
     fn gl_mouse_vec(&self) -> Vec2F {
         Vec2F::new(self.mouse_x() as f32, 1.0 - self.mouse_y() as f32) * 2.0 - 1.0
+    }
+    fn win_width(&self) -> u32 {
+        self.screen_size_changed().0 .0 as u32
+    }
+    fn win_height(&self) -> u32 {
+        self.screen_size_changed().0 .1 as u32
+    }
+    fn win_aspect(&self) -> f32 {
+        self.win_width() as f32 / self.win_height() as f32
     }
 }
 
@@ -259,6 +270,22 @@ impl DefaultEventManager {
     pub fn wprocess_event_set(&mut self, set: crate::window::webgl_window::WebWindowEventSet) {
         self.process_events(&set.get_events())
     }
+    #[wasm_bindgen(js_name = winSizeChanged)]
+    pub fn wwin_size_changed(&self) -> bool {
+        self.screen_size_changed().1
+    }
+    #[wasm_bindgen(js_name = winSize)]
+    pub fn wwin_size(&self) -> Vec2F {
+        Vec2F::new(self.win_width() as f32, self.win_height() as f32)
+    }
+    #[wasm_bindgen(js_name = winAspect)]
+    pub fn wwin_aspect(&self) -> f32 {
+        self.win_aspect()
+    }
+    #[wasm_bindgen(js_name = glMousePos)]
+    pub fn wgl_mouse_pos(&self) -> Vec2F {
+        self.gl_mouse_vec()
+    }
 }
 
 /// A common set of functions for each platform.
@@ -272,12 +299,20 @@ pub trait AbstractWindow {
     fn get_events(&mut self) -> Vec<WindowEvent>;
     fn swap_buffers(&mut self);
     fn close(&mut self);
-    fn set_clear_colour(&mut self, r: f64, g: f64, b: f64, a: f64);
-    fn clear(&mut self);
     fn get_size(&self) -> (i32, i32);
     fn get_pos(&self) -> (i32, i32);
-    fn set_resolution(&self, res: (i32, i32));
+    fn get_gl_context(&mut self) -> Context;
 
+    fn set_clear_colour(&mut self, r: f32, g: f32, b: f32, a: f32) {
+        self.get_gl_context().clear_color(r, g, b, a);
+    }
+    fn clear(&mut self, mask: &[GlClearMask]) {
+        self.get_gl_context().clear(mask);
+    }
+    fn set_resolution(&mut self, res: (i32, i32)) {
+        self.get_gl_context()
+            .viewport(0, 0, res.0 as u32, res.1 as u32);
+    }
     fn get_width(&self) -> i32 {
         self.get_size().0
     }
@@ -289,4 +324,133 @@ pub trait AbstractWindow {
 /// Managing window creation.
 pub trait AbstractWindowFactory {
     fn create(args: &WindowCreateArgs) -> Self;
+}
+
+#[repr(i32)]
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlDrawMode {
+    Triangles = 0b1,
+    Points = 0b10,
+    LineStrip = 0b100,
+    LineLoop = 0b1000,
+    Lines = 0b10000,
+    TriangleStrip = 0b100000,
+    TriangleFan = 0b1000000,
+}
+#[repr(i32)]
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlBufferType {
+    ArrayBuffer = 0b1,
+    AtomicCounterBuffer = 0b10,
+    CopyReadBuffer = 0b100,
+    CopyWriteBuffer = 0b1000,
+    DispatchIndirectBuffer = 0b10000,
+    DrawIndirectBuffer = 0b100000,
+    ElementArrayBuffer = 0b1000000,
+    PixelPackBuffer = 0b10000000,
+    PixelUnpackBuffer = 0b100000000,
+    QueryBuffer = 0b1000000000,
+    ShaderStorageBuffer = 0b10000000000,
+    TextureBuffer = 0b100000000000,
+    TransformFeedbackBuffer = 0b1000000000000,
+    UniformBuffer = 0b10000000000000,
+}
+#[repr(i32)]
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlStorageMode {
+    Static = 0b1,
+    Dynamic = 0b10,
+}
+#[repr(i32)]
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlShaderType {
+    Vertex = 0b1,
+    Fragment = 0b10,
+    TessControl = 0b100,
+    TessEvaluation = 0b1000,
+    Geometry = 0b10000,
+    Compute = 0b100000,
+}
+#[repr(i32)]
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GlClearMask {
+    Color = 0b1,
+    Depth = 0b10,
+    Accum = 0b100,
+    Stencil = 0b1000,
+}
+
+#[allow(drop_bounds)]
+pub trait GlBindable: Sized + Drop {
+    fn bind(&self);
+    fn unbind(&self);
+}
+pub trait GlShaderLoc: Sized {}
+pub trait GlBuffer: GlBindable {
+    fn new(w: &Window, tp: GlBufferType) -> Self;
+    fn buffer_data(&self, size: usize, data: *const f32, mode: GlStorageMode);
+    fn buffer_sub_data(&self, start: usize, size: usize, data: *const f32);
+    fn get_buffer_sub_data(&self, start: usize, size: usize, recv: *mut f32);
+    fn get_type(&self) -> GlBufferType;
+    fn delete(&mut self);
+}
+pub trait GlVertexArray: GlBindable {
+    fn new(w: &Window) -> Self;
+    fn attrib_ptr(&self, v: &VertexAttrib);
+    fn remove_attrib_ptr(&self, v: &VertexAttrib);
+    fn delete(&mut self);
+}
+pub trait GlProgram: GlBindable {
+    type ShaderLoc: GlShaderLoc;
+    type Shader: GlShader;
+    fn new(w: &Window) -> Self;
+    fn draw_arrays(&self, mode: GlDrawMode, start: i32, len: i32);
+    fn shader_loc(&self, name: &str) -> Self::ShaderLoc;
+    fn attach_shader(&self, shader: &Self::Shader);
+    fn link_program(&self);
+    fn get_link_status(&self) -> Option<String>;
+    fn uniform_4f(&self, loc: &Self::ShaderLoc, v: (f32, f32, f32, f32));
+    fn uniform_3f(&self, loc: &Self::ShaderLoc, v: (f32, f32, f32));
+    fn uniform_2f(&self, loc: &Self::ShaderLoc, v: (f32, f32));
+    fn uniform_1f(&self, loc: &Self::ShaderLoc, v: f32);
+    fn uniform_4i(&self, loc: &Self::ShaderLoc, v: (i32, i32, i32, i32));
+    fn uniform_3i(&self, loc: &Self::ShaderLoc, v: (i32, i32, i32));
+    fn uniform_2i(&self, loc: &Self::ShaderLoc, v: (i32, i32));
+    fn uniform_1i(&self, loc: &Self::ShaderLoc, v: i32);
+    fn uniform_mat4f(&self, loc: &Self::ShaderLoc, v: &[f32]);
+    fn uniform_mat3f(&self, loc: &Self::ShaderLoc, v: &[f32]);
+    fn uniform_mat2f(&self, loc: &Self::ShaderLoc, v: &[f32]);
+    fn delete(&mut self);
+}
+#[allow(drop_bounds)]
+pub trait GlShader: Sized + Drop {
+    fn new(w: &Window, st: GlShaderType) -> Self;
+    fn shader_source(&self, src: &str);
+    fn compile(&self);
+    fn get_compile_status(&self) -> Option<String>;
+    fn get_type(&self) -> GlShaderType;
+    fn delete(&mut self);
+
+    fn from_source(w: &Window, st: GlShaderType, src: &str) -> Result<Self, String> {
+        let ret = Self::new(w, st);
+        ret.shader_source(src);
+        ret.compile();
+        if let Some(err) = ret.get_compile_status() {
+            Err(err)
+        } else {
+            Ok(ret)
+        }
+    }
+}
+pub trait GlContext: Sized {
+    fn new(w: &mut Window) -> Self;
+
+    fn clear(&self, mask: &[GlClearMask]);
+    fn clear_color(&self, r: f32, g: f32, b: f32, a: f32);
+    fn viewport(&self, x: i32, y: i32, w: u32, h: u32);
 }
