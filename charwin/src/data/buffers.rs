@@ -4,7 +4,7 @@ use crate::window::{
     GlBindable, GlBuffer, GlBufferType, GlDrawMode, GlProgram, GlShader, GlShaderType,
     GlStorageMode, GlVertexArray,
 };
-use charmath::linear::matrix::{Mat2F, Mat4F, MatrixBase};
+use charmath::linear::matrix::{Mat2F, Mat4F, MatrixBase, Mat2f32, Mat4f32};
 use charmath::linear::vector::{
     Vec2, Vec2f32, Vec2i32, Vec3, Vec3f32, Vec3i32, Vec4, Vec4f32, Vec4i32,
 };
@@ -315,15 +315,19 @@ impl VertexBase for VertexVTN {
     }
 }
 
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
 pub struct GPUShader {
-    pub prog: Program,
+    prog: Program,
 }
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
 impl GPUShader {
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(constructor))]
     pub fn new(w: &Window) -> Self {
         Self {
             prog: Program::new(w),
         }
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = compile))]
     pub fn compile(&self, w: &Window, v: &str, f: &str) {
         match (
             Shader::from_source(w, GlShaderType::Vertex, v),
@@ -334,69 +338,93 @@ impl GPUShader {
                 self.prog.attach_shader(&fs);
                 self.prog.link_program();
                 if let Some(err) = self.prog.get_link_status() {
-                    char_panic!("Error linking program: Program({})", err);
+                    char_panic!("Error linking program: \n{}", err);
                 }
             }
             (Err(vs), Err(fs)) => {
                 char_panic!(
-                    "Error compiling vertex and fragment shaders: Verex({}), Fragment({})",
+                    "Error compiling vertex and fragment shaders: \n{}\n\n{}",
                     vs,
                     fs
                 );
             }
             (Err(vs), Ok(_)) => {
-                char_panic!("Error compiling vertex shader: Vertex({})", vs);
+                char_panic!("Error compiling vertex shader: \n{}", vs);
             }
             (Ok(_), Err(fs)) => {
-                char_panic!("Error compiling framgnet shader: Fragment({})", fs);
+                char_panic!("Error compiling framgnet shader: \n{}", fs);
             }
         }
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = use))]
     pub fn use_shader(&self) {
         self.prog.bind();
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = draw))]
     pub fn draw(&self, nt: i32) {
         self.draw_from(0, nt);
     }
+        #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = drawFrom))]
     pub fn draw_from(&self, start: i32, n_tris: i32) {
         self.prog
             .draw_arrays(GlDrawMode::Triangles, start, n_tris * 3);
     }
+        #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = fromSources))]
     pub fn from_sources(w: &Window, v: &str, f: &str) -> Self {
         let ret = Self::new(w);
         ret.compile(w, v, f);
         ret
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setVec4f))]
     pub fn set_vec4f(&self, name: &str, vec: &Vec4f32) {
         self.prog
             .uniform_4f(&self.prog.shader_loc(name), vec.as_tuple());
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setVec3f))]
     pub fn set_vec3f(&self, name: &str, vec: &Vec3f32) {
         self.prog
             .uniform_3f(&self.prog.shader_loc(name), vec.as_tuple());
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setVec2f))]
     pub fn set_vec2f(&self, name: &str, vec: &Vec2f32) {
         self.prog
             .uniform_2f(&self.prog.shader_loc(name), vec.as_tuple());
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setFloat))]
     pub fn set_float(&self, name: &str, vec: f32) {
         self.prog.uniform_1f(&self.prog.shader_loc(name), vec);
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setVec4i))]
     pub fn set_vec4i(&self, name: &str, vec: &Vec4i32) {
         self.prog
             .uniform_4i(&self.prog.shader_loc(name), vec.as_tuple());
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setVec3i))]
     pub fn set_vec3i(&self, name: &str, vec: &Vec3i32) {
         self.prog
             .uniform_3i(&self.prog.shader_loc(name), vec.as_tuple());
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setVec2i))]
     pub fn set_vec2i(&self, name: &str, vec: &Vec2i32) {
         self.prog
             .uniform_2i(&self.prog.shader_loc(name), vec.as_tuple());
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setInt))]
     pub fn set_int(&self, name: &str, vec: i32) {
         self.prog.uniform_1i(&self.prog.shader_loc(name), vec);
     }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setMat4f))]
+    pub fn set_mat4f32(&self, name: &str, mat: &Mat4f32) {
+        self.prog
+            .uniform_mat4f(&self.prog.shader_loc(name), &mat.flatten());
+    }
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setMat2f))]
+    pub fn set_mat2f32(&self, name: &str, mat: &Mat2f32) {
+        self.prog
+            .uniform_mat2f(&self.prog.shader_loc(name), &mat.flatten());
+    }
+}
+impl GPUShader {
     pub fn set_mat4f(&self, name: &str, mat: &Mat4F) {
         self.prog
             .uniform_mat4f(&self.prog.shader_loc(name), &mat.flatten());
@@ -457,5 +485,29 @@ impl<V: VertexBase> GPUBuffer for TriGPUBuffer<V> {
 impl<V: VertexBase> TriGPUBuffer<V> {
     pub fn n_tris(&self) -> i32 {
         self.n_tris
+    }
+}
+
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+pub struct WebGlTriGPUBufferVertexV {
+    buff: TriGPUBuffer<VertexV>,
+}
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+impl WebGlTriGPUBufferVertexV {
+    #[wasm_bindgen(js_name = fromFloatArray)]
+    pub fn from_float_array(win: &mut Window, arr: &[f32]) -> Self {
+        Self {
+            buff: TriCPUBuffer::<VertexV>::from_f32_array(arr).to_gpu_buffer(win),
+        }
+    }
+    #[wasm_bindgen(js_name = bindVAO)]
+    pub fn bind_vao(&self) {
+        self.buff.vao.bind();
+    }
+    #[wasm_bindgen(js_name = nTris)]
+    pub fn n_tris(&self) -> i32 {
+        self.buff.n_tris()
     }
 }

@@ -6,16 +6,17 @@
 	<body>
 		<canvas id="CharEngine" style="width: 100%; height: 100%;"></canvas>
 		<script type="module">
-		import init from "./pkg/charengine.js";
-		init();
+		import init, {start} from "./pkg/charengine.js";
+		init().then(() => start());
 			// import init, {
-			// 		WebGlWindow, WebGPUShader, WindowCreateArgs, WindowSizeMode, DefaultEventManager, Key,
-			// 		WebGlTri3DGPUBuffer,
+			// 		WebGlWindow, GPUShader, WindowCreateArgs, WindowSizeMode, DefaultEventManager, Key,
+			// 		WebGlTriGPUBufferVertexV, GlClearMask,
 			// 	} from "./pkg/charengine.js";
 			// init().then(() => {
 			// 	let win = new WebGlWindow(new WindowCreateArgs("CharEngine", 0, 0, WindowSizeMode.Windowed));
 			// 	let man = new DefaultEventManager();
-			// 	let shader = WebGPUShader.fromSources(win,
+			// 	try {
+			// 	let shader = GPUShader.fromSources(win,
       //               `#version 300 es
       //               precision highp float;
       //               layout (location = 0) in vec3 aPos;
@@ -31,7 +32,7 @@
       //                   FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
       //               }
       //               `);
-			// 	let quad = WebGlTri3DGPUBuffer.fromFloatArray(win, [-0.5, -0.5, 0.0,
+			// 	let quad = WebGlTriGPUBufferVertexV.fromFloatArray(win, [-0.5, -0.5, 0.0,
       //                                                          -0.5, 0.5, 0.0,
       //                                                          0.5, 0.5, 0.0,
 			//
@@ -51,10 +52,10 @@
 			// 			end();
 			// 			return;
 			// 		}
-			// 		win.clear();
-      //               shader.useShader();
+			// 		win.clear(GlClearMask.Color);
+      //     shader.use();
 			// 		quad.bindVAO();
-      //               shader.setVec2f32("pos", man.glMousePos());
+      //     shader.setVec2f("pos", man.glMousePos());
 			// 		shader.draw(quad.nTris());
 			// 		requestAnimationFrame(main);
 			// 	};
@@ -63,6 +64,10 @@
 			// 		console.log("Destroyed");
 			// 	};
 			// 	main();
+			// } catch (e) {
+			// 	console.error(e);
+			// 	win.destroy();
+			// }
 			// });
 		</script>
 	</body>

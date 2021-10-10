@@ -38,7 +38,6 @@ mod tests {
             void main() {
                 vec2 trns = aPos.xy * rot + pos;
                 gl_Position = vec4(trns.x, trns.y * aspect, 0.0, 1.0);
-                // gl_Position = vec4(aPos.xy, 0.0, 1.0);
             }
             ";
             let fs = "#version 300 es
@@ -89,7 +88,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_family = "wasm"), test)]
-    #[cfg_attr(target_family = "wasm", wasm_bindgen(start))]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = start))]
     pub fn native_window_tests() {
         let app = App::new();
         let manager = DefaultEventManager::new();
