@@ -6,7 +6,6 @@ pub mod webgl_window;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
-use crate::data::buffers::VertexAttrib;
 use crate::input::{Key, MouseButton};
 use crate::platform::{Context, Window};
 use charmath::linear::vector::{Vec2, Vec2F};
@@ -326,9 +325,20 @@ pub trait AbstractWindowFactory {
     fn create(args: &WindowCreateArgs) -> Self;
 }
 
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
+pub struct VertexAttrib(pub u32, pub u32, pub usize, pub usize);
+#[cfg(target_family = "wasm")]
+#[wasm_bindgen]
+impl VertexAttrib {
+    #[wasm_bindgen(constructor)]
+    pub fn wnew(index: i32, size: i32, step: i32, offset: i32) -> Self {
+        VertexAttrib(index as u32, size as u32, step as usize, offset as usize)
+    }
+}
+
 #[repr(i32)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlDrawMode {
     Triangles = 0b1,
     Points = 0b10,
@@ -340,7 +350,7 @@ pub enum GlDrawMode {
 }
 #[repr(i32)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlBufferType {
     ArrayBuffer = 0b1,
     AtomicCounterBuffer = 0b10,
@@ -359,14 +369,14 @@ pub enum GlBufferType {
 }
 #[repr(i32)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlStorageMode {
     Static = 0b1,
     Dynamic = 0b10,
 }
 #[repr(i32)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlShaderType {
     Vertex = 0b1,
     Fragment = 0b10,
@@ -377,12 +387,18 @@ pub enum GlShaderType {
 }
 #[repr(i32)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlClearMask {
     Color = 0b1,
     Depth = 0b10,
     Accum = 0b100,
     Stencil = 0b1000,
+}
+#[repr(i64)]
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum GlFeature {
+    DepthBuffer = 0b1,
 }
 
 #[allow(drop_bounds)]
@@ -453,4 +469,18 @@ pub trait GlContext: Sized {
     fn clear(&self, mask: &[GlClearMask]);
     fn clear_color(&self, r: f32, g: f32, b: f32, a: f32);
     fn viewport(&self, x: i32, y: i32, w: u32, h: u32);
+    fn enable(&mut self, feature: GlFeature);
+    fn disable(&mut self, feature: GlFeature);
+    fn get_enabled_features(&self) -> Vec<GlFeature>;
+
+    fn enable_features(&mut self, features: &[GlFeature]) {
+        for i in 0..features.len() {
+            self.enable(features[i]);
+        }
+    }
+    fn disable_features(&mut self, features: &[GlFeature]) {
+        for i in 0..features.len() {
+            self.disable(features[i]);
+        }
+    }
 }

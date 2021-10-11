@@ -2,8 +2,7 @@
 mod tests {
     use charmath::linear::matrix::*;
     // use charmath::linear::vector::*;
-    use charwin::data::buffers::*;
-    // use charwin::data::*;
+    use charwin::data::*;
     use charwin::input::*;
     use charwin::platform::*;
     use charwin::state::*;
@@ -88,7 +87,7 @@ mod tests {
     }
 
     #[cfg_attr(not(target_family = "wasm"), test)]
-    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = start))]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(start))]
     pub fn native_window_tests() {
         let app = App::new();
         let manager = DefaultEventManager::new();

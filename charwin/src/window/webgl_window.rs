@@ -1,15 +1,15 @@
 use crate::char_panic;
-use crate::data::buffers::VertexAttrib;
 use crate::input::{Key, MouseButton};
 use crate::platform::{Context, Window};
 use crate::state::State;
 use crate::window::{
     AbstractWindow, AbstractWindowFactory, EventManager, GlBindable, GlBuffer, GlBufferType,
-    GlClearMask, GlContext, GlDrawMode, GlProgram, GlShader, GlShaderLoc, GlShaderType,
-    GlStorageMode, GlVertexArray, WindowCreateArgs, WindowEvent,
+    GlClearMask, GlContext, GlDrawMode, GlFeature, GlProgram, GlShader, GlShaderLoc, GlShaderType,
+    GlStorageMode, GlVertexArray, VertexAttrib, WindowCreateArgs, WindowEvent,
 };
 use js_sys::Float32Array;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::mem::size_of;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -662,11 +662,13 @@ pub fn js_mouse_to_mouse(m: &MouseEvent) -> MouseButton {
 #[wasm_bindgen]
 pub struct WebGlContext {
     context: Arc<Mutex<WebGl2RenderingContext>>,
+    features: HashSet<GlFeature>,
 }
 impl GlContext for WebGlContext {
     fn new(w: &mut Window) -> Self {
         Self {
             context: w.get_context_arc(),
+            features: HashSet::with_capacity(10),
         }
     }
 
@@ -691,6 +693,17 @@ impl GlContext for WebGlContext {
             .lock()
             .unwrap()
             .viewport(x, y, w as i32, h as i32);
+    }
+    fn enable(&mut self, feature: GlFeature) {
+        self.features.insert(feature);
+        char_panic!("WebGlContext.enable is unimplemented.");
+    }
+    fn disable(&mut self, feature: GlFeature) {
+        self.features.remove(&feature);
+        char_panic!("WebGlContext.disable is unimplemented.");
+    }
+    fn get_enabled_features(&self) -> Vec<GlFeature> {
+        self.features.iter().map(|x| *x).collect()
     }
 }
 

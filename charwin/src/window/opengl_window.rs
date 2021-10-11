@@ -5,16 +5,16 @@ use glfw::{
 use std::ffi::CString;
 use std::ptr;
 extern crate gl;
-use crate::data::buffers::VertexAttrib;
 use crate::input::{Key, MouseButton};
 use crate::platform::{Context, Window};
 use crate::state::{FrameManager, State};
 use crate::window::{
     AbstractWindow, AbstractWindowFactory, EventManager, GlBindable, GlBuffer, GlBufferType,
-    GlClearMask, GlContext, GlDrawMode, GlProgram, GlShader, GlShaderLoc, GlShaderType,
-    GlStorageMode, GlVertexArray, WindowCreateArgs, WindowEvent, WindowSizeMode,
+    GlClearMask, GlContext, GlDrawMode, GlFeature, GlProgram, GlShader, GlShaderLoc, GlShaderType,
+    GlStorageMode, GlVertexArray, VertexAttrib, WindowCreateArgs, WindowEvent, WindowSizeMode,
 };
 use gl::types::{GLbitfield, GLchar, GLenum, GLint, GLintptr, GLsizei, GLsizeiptr, GLuint, GLvoid};
+use std::collections::HashSet;
 
 pub struct NativeGlWindow {
     glfw: Glfw,
@@ -210,12 +210,15 @@ fn gl_event_to_window_event(gl_event: GlWindowEvent) -> Option<WindowEvent> {
     }
 }
 
-pub struct NativeGlContext {}
+pub struct NativeGlContext {
+    features: HashSet<GlFeature>,
+}
 impl GlContext for NativeGlContext {
     fn new(_: &mut Window) -> Self {
-        Self {}
+        Self {
+            features: HashSet::with_capacity(10),
+        }
     }
-
     fn clear(&self, mask: &[GlClearMask]) {
         use GlClearMask::*;
         let mut glmask: GLbitfield = 0;
@@ -240,6 +243,17 @@ impl GlContext for NativeGlContext {
         unsafe {
             gl::Viewport(x, y, w as i32, h as i32);
         }
+    }
+    fn enable(&mut self, feature: GlFeature) {
+        self.features.insert(feature);
+        unimplemented!();
+    }
+    fn disable(&mut self, feature: GlFeature) {
+        self.features.remove(&feature);
+        unimplemented!();
+    }
+    fn get_enabled_features(&self) -> Vec<GlFeature> {
+        self.features.iter().map(|x| *x).collect()
     }
 }
 
