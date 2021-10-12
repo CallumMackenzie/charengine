@@ -38,7 +38,6 @@ impl NativeGlWindow {
         let mut state_res = state.initialize(&mut self, &mut manager);
         self.get_gl_errors();
         if state_res == 0 {
-            println!("State initialized.");
             loop {
                 if fm.next_frame_ready() {
                     self.poll_events();
@@ -51,7 +50,6 @@ impl NativeGlWindow {
             }
         }
         state.destroy(&mut self, &mut manager, state_res);
-        println!("State destroyed.");
         self.get_gl_errors();
     }
     fn get_gl_errors(&self) {
@@ -60,22 +58,26 @@ impl NativeGlWindow {
             while err != gl::NO_ERROR {
                 match err {
                     gl::INVALID_ENUM => {
-                        panic!("OpenGL: GL_INVALID_ENUM (0x0500)");
+                        panic!("OpenGL: GL_INVALID_ENUM (0x0500). Enumeration parameter is not legal for function.");
                     }
                     gl::INVALID_VALUE => {
-                        panic!("OpenGL: GL_INVALID_VALUE (0x0501)");
+                        panic!("OpenGL: GL_INVALID_VALUE (0x0501). Value parameter is not legal for function.");
                     }
                     gl::INVALID_OPERATION => {
-                        panic!("OpenGL: GL_INVALID_OPERATION (0x0502)");
+                        panic!(
+                            "OpenGL: GL_INVALID_OPERATION (0x0502). State is invalid for function."
+                        );
                     }
                     gl::STACK_OVERFLOW => {
-                        panic!("OpenGL: GL_STACK_OVERFLOW (0x0503)");
+                        panic!("OpenGL: GL_STACK_OVERFLOW (0x0503). Stack pushing operation cannot be done due to stack size.");
                     }
                     gl::STACK_UNDERFLOW => {
-                        panic!("OpenGL: GL_STACK_UNDERFLOW (0x0504)");
+                        panic!("OpenGL: GL_STACK_UNDERFLOW (0x0504). Stack pop operation cannot be done due to stack size.");
                     }
                     gl::OUT_OF_MEMORY => {
-                        panic!("OpenGL: GL_OUT_OF_MEMORY (0x0505)");
+                        panic!(
+                            "OpenGL: GL_OUT_OF_MEMORY (0x0505). Cannot allocate more heap memory."
+                        );
                     }
                     gl::INVALID_FRAMEBUFFER_OPERATION => {
                         panic!("OpenGL: GL_INVALID_FRAMEBUFFER_OPERATION (0x0506)");
@@ -262,11 +264,6 @@ pub struct NativeGlBuffer {
     buff_type: GlBufferType,
     gl_buff_type: GLenum,
 }
-impl Drop for NativeGlBuffer {
-    fn drop(&mut self) {
-        self.delete();
-    }
-}
 impl NativeGlBuffer {
     fn buff_type(t: &GlBufferType) -> GLenum {
         use GlBufferType::*;
@@ -352,7 +349,9 @@ impl GlBuffer for NativeGlBuffer {
             );
         }
     }
-    fn delete(&mut self) {
+}
+impl Drop for NativeGlBuffer {
+    fn drop(&mut self) {
         unsafe {
             gl::DeleteBuffers(1, &mut self.vbo);
         }
@@ -361,11 +360,6 @@ impl GlBuffer for NativeGlBuffer {
 
 pub struct NativeGlVertexArray {
     pub vao: GLuint,
-}
-impl Drop for NativeGlVertexArray {
-    fn drop(&mut self) {
-        self.delete();
-    }
 }
 impl GlBindable for NativeGlVertexArray {
     fn bind(&self) {
@@ -405,22 +399,18 @@ impl GlVertexArray for NativeGlVertexArray {
             gl::DisableVertexAttribArray(a.0 as GLuint);
         }
     }
-    fn delete(&mut self) {
+}
+impl Drop for NativeGlVertexArray {
+    fn drop(&mut self) {
         unsafe {
             gl::DeleteVertexArrays(1, &mut self.vao);
         }
-        self.vao = gl::NONE;
     }
 }
 
 pub struct NativeGlShader {
     pub shader: GLuint,
     pub stype: GlShaderType,
-}
-impl Drop for NativeGlShader {
-    fn drop(&mut self) {
-        self.delete();
-    }
 }
 impl NativeGlShader {
     fn shader_type(t: &GlShaderType) -> GLenum {
@@ -487,11 +477,12 @@ impl GlShader for NativeGlShader {
     fn get_type(&self) -> GlShaderType {
         self.stype
     }
-    fn delete(&mut self) {
+}
+impl Drop for NativeGlShader {
+    fn drop(&mut self) {
         unsafe {
             gl::DeleteShader(self.shader);
         }
-        self.shader = gl::NONE;
     }
 }
 
@@ -514,11 +505,6 @@ impl NativeGlProgram {
             TriangleStrip => gl::TRIANGLE_STRIP,
             TriangleFan => gl::TRIANGLE_FAN,
         }
-    }
-}
-impl Drop for NativeGlProgram {
-    fn drop(&mut self) {
-        self.delete();
     }
 }
 impl GlBindable for NativeGlProgram {
@@ -648,10 +634,11 @@ impl GlProgram for NativeGlProgram {
             gl::UniformMatrix2fv(loc.loc, 1, 0, &v[0] as *const f32);
         }
     }
-    fn delete(&mut self) {
+}
+impl Drop for NativeGlProgram {
+    fn drop(&mut self) {
         unsafe {
             gl::DeleteProgram(self.program);
         }
-        self.program = gl::NONE;
     }
 }

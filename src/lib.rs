@@ -1,7 +1,9 @@
+pub mod world;
+
 #[cfg(any(test, target_family = "wasm"))]
 mod tests {
     use charmath::linear::matrix::*;
-    // use charmath::linear::vector::*;
+    use charmath::linear::vector::*;
     use charwin::data::*;
     use charwin::input::*;
     use charwin::platform::*;
@@ -35,15 +37,16 @@ mod tests {
             uniform vec2 pos;
             uniform float aspect;
             void main() {
-                vec2 trns = aPos.xy * rot + pos;
-                gl_Position = vec4(trns.x, trns.y * aspect, 0.0, 1.0);
+                vec2 trns = aPos.xy * rot * vec2(aspect, 1.0);
+                gl_Position = vec4(trns.xy + pos, 0.0, 1.0);
             }
             ";
             let fs = "#version 300 es
             precision mediump float;
             out vec4 FragColor;
+            uniform vec4 col;
             void main() {
-               FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
+               FragColor = col;
             }
             ";
             let cpu_tris = TriCPUBuffer::from_f32_array(&[
@@ -57,17 +60,37 @@ mod tests {
         fn update(&mut self, win: &mut Window, eng: &mut dyn EventManager, delta: f64) -> i32 {
             win.poll_events();
             if eng.key_pressed(Key::Q) {
-                self.rot += 2.0 * delta as f32;
+                self.rot += 3.0 * delta as f32;
             }
             if eng.key_pressed(Key::E) {
-                self.rot -= 2.0 * delta as f32;
+                self.rot -= 3.0 * delta as f32;
+            }
+            if eng.key_pressed(Key::Escape) {
+                win.close();
+            }
+            if eng.key_pressed(Key::R) {
+                self.tri_buffer
+                    .as_mut()
+                    .unwrap()
+                    .sub_data(3, 2, &[-0.7, 0.7]);
+            }
+            if eng.key_pressed(Key::T) {
+                self.tri_buffer
+                    .as_mut()
+                    .unwrap()
+                    .sub_data(3, 2, &[-0.5, 0.5]);
             }
             if let (Some(shader), Some(buff)) = (self.shader.as_ref(), self.tri_buffer.as_ref()) {
-                win.clear(&[GlClearMask::Color]);
+                win.clear_colour();
                 shader.use_shader();
                 shader.set_mat2f("rot", &matrices::rotation_2d(self.rot));
                 shader.set_vec2f("pos", &eng.gl_mouse_vec());
-                shader.set_float("aspect", eng.win_aspect());
+                shader.set_float("aspect", eng.win_aspect_y());
+                if eng.mouse_left_pressed() {
+                    shader.set_vec4f("col", &Vec4f32::new(1.0, 0.5, 0.5, 1.0));
+                } else {
+                    shader.set_vec4f("col", &Vec4f32::new(1.0, 1.0, 1.0, 1.0));
+                }
                 buff.vao.bind();
                 shader.draw(buff.n_tris());
             }
@@ -76,18 +99,16 @@ mod tests {
                 win.set_size(sz);
                 win.set_resolution(sz);
             }
-            if eng.key_pressed(Key::Escape) {
-                win.close();
-            }
             0
         }
-        fn destroy(&mut self, _win: &mut Window, _manager: &mut dyn EventManager, exit_code: i32) {
+        fn destroy(&mut self, win: &mut Window, _manager: &mut dyn EventManager, exit_code: i32) {
             dbg_log(&format!("App exiting with code {}.", exit_code));
+            win.clear_colour();
         }
     }
 
     #[cfg_attr(not(target_family = "wasm"), test)]
-    #[cfg_attr(target_family = "wasm", wasm_bindgen(start))]
+    #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = start))]
     pub fn native_window_tests() {
         let app = App::new();
         let manager = DefaultEventManager::new();
@@ -98,5 +119,6 @@ mod tests {
             WindowSizeMode::Windowed,
         ));
         window.render_loop(app, manager);
+		
     }
 }

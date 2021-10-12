@@ -254,7 +254,6 @@ impl WebGlWindow {
                         .push(WindowEvent::Size(rect.width() as i32, rect.height() as i32));
                     manager.process_events(&self.get_events());
                     state.initialize(&mut self, &mut manager);
-                    js_log_string("State initialized.");
                     state_initialized = true;
                 } else {
                     manager.process_events(&self.get_events());
@@ -271,14 +270,6 @@ impl WebGlWindow {
                     );
                 } else {
                     state.destroy(&mut self, &mut manager, update_res);
-                    if let Some(mutex) = self.event_listener.as_ref() {
-                        if let Ok(mut listener) = mutex.lock() {
-                            listener.clear_listeners();
-                        } else {
-                            char_panic!("DOM: Cannot remove event listeners: mutex poisoned.");
-                        }
-                    }
-                    js_log_string("State destroyed.");
                     let _ = f.borrow_mut().take();
                 }
             }) as Box<dyn FnMut()>));
@@ -290,6 +281,22 @@ impl WebGlWindow {
     }
     pub fn get_context_arc(&self) -> Arc<Mutex<WebGl2RenderingContext>> {
         Arc::clone(&self.context)
+    }
+}
+impl Drop for WebGlWindow {
+    fn drop(&mut self) {
+        if let Some(mutex) = self.event_listener.as_ref() {
+            if let Ok(mut listener) = mutex.lock() {
+                listener.clear_listeners();
+            } else {
+                char_panic!("DOM: Cannot remove event listeners: mutex poisoned.");
+            }
+        }
+        if let Ok(mut _context) = self.context.lock() {
+            // Drop context
+        } else {
+            char_panic!("DOM: Cannot drop canvas context: mutex poisoned.");
+        }
     }
 }
 
@@ -788,6 +795,8 @@ impl GlBuffer for WebGlBuffer {
         }
     }
     fn get_buffer_sub_data(&self, start: usize, size: usize, recv: *mut f32) {
+        let size = size / size_of::<f32>();
+        let start = start / size_of::<f32>();
         unsafe {
             let positions_array_buf_view = Float32Array::view_mut_raw(recv, size);
             self.context
@@ -803,17 +812,13 @@ impl GlBuffer for WebGlBuffer {
     fn get_type(&self) -> GlBufferType {
         self.buff_type
     }
-    fn delete(&mut self) {
+}
+impl Drop for WebGlBuffer {
+    fn drop(&mut self) {
         self.context
             .lock()
             .unwrap()
             .delete_buffer(self.buff.as_ref());
-        self.buff = None;
-    }
-}
-impl Drop for WebGlBuffer {
-    fn drop(&mut self) {
-        self.delete();
     }
 }
 
@@ -885,16 +890,13 @@ impl GlShader for WebGlShader {
     fn get_type(&self) -> GlShaderType {
         self.stype
     }
-    fn delete(&mut self) {
+}
+impl Drop for WebGlShader {
+    fn drop(&mut self) {
         self.context
             .lock()
             .unwrap()
             .delete_shader(Some(&self.shader));
-    }
-}
-impl Drop for WebGlShader {
-    fn drop(&mut self) {
-        self.delete();
     }
 }
 
@@ -938,17 +940,13 @@ impl GlVertexArray for WebGlVertexArray {
             .unwrap()
             .disable_vertex_attrib_array(v.0);
     }
-    fn delete(&mut self) {
+}
+impl Drop for WebGlVertexArray {
+    fn drop(&mut self) {
         self.context
             .lock()
             .unwrap()
             .delete_vertex_array(self.vao.as_ref());
-        self.vao = None;
-    }
-}
-impl Drop for WebGlVertexArray {
-    fn drop(&mut self) {
-        self.delete();
     }
 }
 
@@ -1112,16 +1110,12 @@ impl GlProgram for WebGlProgram {
             .unwrap()
             .uniform_matrix2fv_with_f32_array(loc.loc_ref(), false, v);
     }
-    fn delete(&mut self) {
+}
+impl Drop for WebGlProgram {
+    fn drop(&mut self) {
         self.context
             .lock()
             .unwrap()
             .delete_program(self.program.as_ref());
-        self.program = None;
-    }
-}
-impl Drop for WebGlProgram {
-    fn drop(&mut self) {
-        self.delete();
     }
 }

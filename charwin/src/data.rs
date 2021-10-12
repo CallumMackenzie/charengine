@@ -15,36 +15,50 @@ use std::ops::{Index, IndexMut};
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
-pub trait CPUBuffer: Sized {
+pub trait DataBuffer: Sized {
     type Data: Sized;
-    type GPUType: GPUBuffer<Data = Self::Data>;
-    fn new() -> Self;
+    type DataUnit: Sized;
     fn set_data(&mut self, data: &Self::Data);
-    fn get_data(&self) -> Self::Data;
+    fn sub_data(&mut self, start: usize, len: usize, data: &[Self::DataUnit]);
+    fn get_sub_data(&self, start: usize, len: usize) -> Self::Data;
+    fn len(&self) -> usize;
 
+    fn to_data(self) -> Self::Data {
+        self.get_data()
+    }
+    fn get_data(&self) -> Self::Data {
+        self.get_sub_data(0, self.len())
+    }
+}
+pub trait CPUBuffer: DataBuffer {
+    type GPUType: DataBuffer<Data = Self::Data, DataUnit = Self::DataUnit> + GPUBuffer;
+
+    fn new() -> Self;
     fn from_data(data: &Self::Data) -> Self {
         let mut ret = Self::new();
         ret.set_data(data);
         ret
     }
-    fn to_gpu_buffer(&self, win: &mut Window) -> Self::GPUType {
+    fn get_gpu_buffer(&self, win: &mut Window) -> Self::GPUType {
         Self::GPUType::from_data(win, &self.get_data())
     }
+    fn to_gpu_buffer(self, win: &mut Window) -> Self::GPUType {
+        Self::GPUType::from_data(win, &self.to_data())
+    }
 }
-pub trait GPUBuffer: Sized {
-    type Data: Sized;
-    type CPUType: CPUBuffer<Data = Self::Data>;
+pub trait GPUBuffer: DataBuffer {
+    type CPUType: DataBuffer<Data = Self::Data, DataUnit = Self::DataUnit> + CPUBuffer;
     fn new(win: &mut Window) -> Self;
-    fn set_data(&mut self, data: &Self::Data);
-    fn get_data(&self) -> Self::Data;
-
     fn from_data(win: &mut Window, data: &Self::Data) -> Self {
         let mut ret = Self::new(win);
         ret.set_data(data);
         ret
     }
-    fn to_cpu_buffer(&self) -> Self::CPUType {
+    fn get_cpu_buffer(&self) -> Self::CPUType {
         Self::CPUType::from_data(&self.get_data())
+    }
+    fn to_cpu_buffer(self) -> Self::CPUType {
+        Self::CPUType::from_data(&self.to_data())
     }
 }
 
@@ -127,27 +141,50 @@ impl<V: VertexBase> TriCPUBuffer<V> {
         self.tris.as_ptr() as *const f32
     }
 }
-impl<V: VertexBase> CPUBuffer for TriCPUBuffer<V> {
+impl<V: VertexBase> DataBuffer for TriCPUBuffer<V> {
     type Data = Vec<Triangle<V>>;
-    type GPUType = TriGPUBuffer<V>;
-    fn new() -> Self {
-        TriCPUBuffer { tris: Vec::new() }
-    }
+    type DataUnit = f32;
     fn set_data(&mut self, data: &Self::Data) {
         self.tris.clear();
         for i in 0..data.len() {
             self.tris.push(data[i]);
         }
     }
-    fn get_data(&self) -> Self::Data {
-        let mut ret = Vec::with_capacity(self.tris.len());
-        for i in 0..self.tris.len() {
-            ret.push(self.tris[i]);
+    fn sub_data(&mut self, start: usize, len: usize, data: &[Self::DataUnit]) {
+        if start + len > self.tris.len() {
+            char_panic!("CPUTriBuffer.sub_data: Start is too far or len is too long.");
+        }
+        if data.len() < len {
+            char_panic!("CPUTriBuffer.sub_data: Data length is smaller than input length.");
+        }
+        unsafe {
+            let tri_float_ptr = self.tris.as_mut_ptr() as *mut f32;
+            for i in 0..len {
+                *tri_float_ptr.offset((start + i) as isize) = data[i];
+            }
+        }
+    }
+    fn get_sub_data(&self, start: usize, len: usize) -> Self::Data {
+        if start + len > self.tris.len() {
+            char_panic!("CPUTriBuffer.get_sub_data: Start is too far or len is too long.");
+        }
+        let mut ret = Vec::with_capacity(len);
+        for i in 0..len {
+            ret.push(self.tris[start + i]);
         }
         ret
     }
-    fn to_gpu_buffer(&self, win: &mut Window) -> Self::GPUType {
-        Self::GPUType::from_data(win, &self.tris)
+    fn to_data(self) -> Self::Data {
+        self.tris
+    }
+    fn len(&self) -> usize {
+        self.tris.len()
+    }
+}
+impl<V: VertexBase> CPUBuffer for TriCPUBuffer<V> {
+    type GPUType = TriGPUBuffer<V>;
+    fn new() -> Self {
+        TriCPUBuffer { tris: Vec::new() }
     }
 }
 impl<V: VertexBase> Index<usize> for TriCPUBuffer<V> {
@@ -431,7 +468,6 @@ pub struct TriGPUBuffer<V: VertexBase> {
     phantom: PhantomData<V>,
 }
 impl<V: VertexBase> GPUBuffer for TriGPUBuffer<V> {
-    type Data = Vec<Triangle<V>>;
     type CPUType = TriCPUBuffer<V>;
     fn new(win: &mut Window) -> Self {
         Self {
@@ -441,6 +477,10 @@ impl<V: VertexBase> GPUBuffer for TriGPUBuffer<V> {
             phantom: PhantomData,
         }
     }
+}
+impl<V: VertexBase> DataBuffer for TriGPUBuffer<V> {
+    type Data = Vec<Triangle<V>>;
+    type DataUnit = f32;
     fn set_data(&mut self, data: &Self::Data) {
         self.n_tris = data.len() as i32;
         self.vao.bind();
@@ -456,24 +496,72 @@ impl<V: VertexBase> GPUBuffer for TriGPUBuffer<V> {
         self.vbo.unbind();
         self.vao.unbind();
     }
-    fn get_data(&self) -> Self::Data {
-        let mut data: Self::Data = Vec::with_capacity(self.n_tris as usize);
+    fn sub_data(&mut self, start: usize, len: usize, data: &[Self::DataUnit]) {
+        if data.len() < len {
+            char_panic!("TriGPUBuffer.sub_data: Input data size too small.");
+        }
+        if start + len > self.n_tris as usize * V::float_size() * 3 {
+            char_panic!("TriGPUBuffer.sub_data: Input range will not fit inside butter.");
+        }
+        self.vbo.bind();
+        self.vbo.buffer_sub_data(
+            start * size_of::<Self::DataUnit>(),
+            len * size_of::<Self::DataUnit>(),
+            &data[0] as *const f32,
+        );
+        self.vbo.unbind();
+    }
+    fn get_sub_data(&self, start: usize, len: usize) -> Self::Data {
+        let mut recv = Self::Data::with_capacity(len);
         self.vbo.bind();
         unsafe {
-            data.set_len(self.n_tris as usize);
+            recv.set_len(len as usize);
             self.vbo.get_buffer_sub_data(
-                0,
-                self.n_tris as usize * size_of::<Triangle<V>>(),
-                data.as_mut_ptr() as *mut f32,
+                start * size_of::<Triangle<V>>(),
+                len * size_of::<Triangle<V>>(),
+                recv.as_mut_ptr() as *mut f32,
             );
         }
+        recv.shrink_to_fit();
         self.vbo.unbind();
-        data
+        recv
+    }
+    fn len(&self) -> usize {
+        self.n_tris as usize
     }
 }
 impl<V: VertexBase> TriGPUBuffer<V> {
     pub fn n_tris(&self) -> i32 {
         self.n_tris
+    }
+}
+
+pub struct CPUTexture {
+    pixels: Vec<u32>,
+}
+impl DataBuffer for CPUTexture {
+    type Data = Vec<u32>;
+    type DataUnit = u32;
+    fn set_data(&mut self, data: &Self::Data) {
+        self.pixels = Vec::with_capacity(data.len());
+        for i in 0..data.len() {
+            self.pixels.push(data[i]);
+        }
+    }
+    fn sub_data(&mut self, start: usize, len: usize, data: &[Self::DataUnit]) {
+        for i in 0..len {
+            self.pixels[start + i] = data[i];
+        }
+    }
+    fn get_sub_data(&self, start: usize, len: usize) -> Self::Data {
+        let mut ret = Self::Data::with_capacity(len);
+        for i in 0..len {
+            ret.push(self.pixels[i + start]);
+        }
+        ret
+    }
+    fn len(&self) -> usize {
+        self.pixels.len()
     }
 }
 

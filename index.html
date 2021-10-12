@@ -1,74 +1,91 @@
 <html>
-	<head>
-		<title>CharEngine</title>
-		<meta charset="utf-8"/>
-	</head>
-	<body>
-		<canvas id="CharEngine" style="width: 100%; height: 100%;"></canvas>
-		<script type="module">
-		import init from "./pkg/charengine.js";
-		init();
-			// import init, {
-			// 		WebGlWindow, GPUShader, WindowCreateArgs, WindowSizeMode, DefaultEventManager, Key,
-			// 		WebGlTriGPUBufferVertexV, GlClearMask,
-			// 	} from "./pkg/charengine.js";
-			// init().then(() => {
-			// 	let win = new WebGlWindow(new WindowCreateArgs("CharEngine", 0, 0, WindowSizeMode.Windowed));
-			// 	let man = new DefaultEventManager();
-			// 	try {
-			// 	let shader = GPUShader.fromSources(win,
-      //               `#version 300 es
-      //               precision highp float;
-      //               layout (location = 0) in vec3 aPos;
-      //               uniform vec2 pos;
-      //               void main() {
-      //                   gl_Position = vec4(aPos.xy + pos, 0.0, 1.0);
-      //               }
-      //               `,
-      //               `#version 300 es
-      //               precision mediump float;
-      //               out vec4 FragColor;
-      //               void main() {
-      //                   FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
-      //               }
-      //               `);
-			// 	let quad = WebGlTriGPUBufferVertexV.fromFloatArray(win, [-0.5, -0.5, 0.0,
-      //                                                          -0.5, 0.5, 0.0,
-      //                                                          0.5, 0.5, 0.0,
-			//
-      //                                                          -0.5, -0.5, 0.0,
-      //                                                          0.5, 0.5, 0.0,
-      //                                                          0.5, -0.5, 0.0,]);
-			// 	win.setClearColour(0.1, 0.1, 0.1, 1);
-			// 	let main = () => {
-			// 		win.pollEvents();
-			// 		man.processEvents(win.getEvents());
-			// 		if (man.winSizeChanged()) {
-			// 			let sz = man.winSize();
-			// 			win.setSize(sz.getX(), sz.getY());
-			// 			win.setResolution(sz.getX(), sz.getY());
-			// 		}
-			// 		if (man.keyPressed(Key.Escape)) {
-			// 			end();
-			// 			return;
-			// 		}
-			// 		win.clear(GlClearMask.Color);
-      //     shader.use();
-			// 		quad.bindVAO();
-      //     shader.setVec2f("pos", man.glMousePos());
-			// 		shader.draw(quad.nTris());
-			// 		requestAnimationFrame(main);
-			// 	};
-			// 	let end = () => {
-			// 		win.destroy();
-			// 		console.log("Destroyed");
-			// 	};
-			// 	main();
-			// } catch (e) {
-			// 	console.error(e);
-			// 	win.destroy();
-			// }
-			// });
-		</script>
-	</body>
+
+<head>
+	<title>CharEngine</title>
+	<meta charset="utf-8" />
+</head>
+
+<body>
+	<canvas id="CharEngine" style="width: 100%; height: 100%;"></canvas>
+	<script type="module">
+		// import init, {start} from "./pkg/charengine.js";
+		// init().then(() => {
+		// 	start();
+		// });
+		import init, {
+			WebGlWindow, GPUShader, WindowCreateArgs, WindowSizeMode, DefaultEventManager, Key,
+			WebGlTriGPUBufferVertexV, GlClearMask, Mat2f32,
+		} from "./pkg/charengine.js";
+		init().then(() => {
+			let win = new WebGlWindow(new WindowCreateArgs("CharEngine", 0, 0, WindowSizeMode.Windowed));
+			let man = new DefaultEventManager();
+			try {
+				let shader = GPUShader.fromSources(win,
+					`#version 300 es
+                    precision highp float;
+                    layout (location = 0) in vec3 aPos;
+                    uniform vec2 pos;
+					uniform float aspect;
+					uniform mat2 rot;
+                    void main() {
+						vec2 t = aPos.xy * rot;
+                        gl_Position = vec4(t.x + pos.x, t.y * aspect + pos.y, 0.0, 1.0);
+                    }
+                    `,
+					`#version 300 es
+                    precision mediump float;
+                    out vec4 FragColor;
+                    void main() {
+                        FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
+                    }
+                    `);
+				let floats = [-0.5, -0.5, 0.0, -0.5, 0.5, 0.0, 0.5, 0.5, 0.0, -0.5, -0.5, 0.0, 0.5, 0.5, 0.0, 0.5, -0.5, 0.0,]
+				let quad = WebGlTriGPUBufferVertexV.fromFloatArray(win, floats);
+				let rot = 0;
+				let lastFrame = Date.now();
+				floats = null;
+				win.setClearColour(0.1, 0.1, 0.1, 1);
+
+				const main = () => {
+					let delta = (Date.now() - lastFrame) / 1000;
+					lastFrame = Date.now();
+					win.pollEvents();
+					man.processEvents(win.getEvents());
+					if (man.winSizeChanged()) {
+						let sz = man.winSize();
+						win.setSize(sz.getX(), sz.getY());
+						win.setResolution(sz.getX(), sz.getY());
+					}
+					if (man.keyPressed(Key.Q)) {
+						rot += 3 * delta;
+					}
+					if (man.keyPressed(Key.E)) {
+						rot -= 3 * delta;
+					}
+					if (man.keyPressed(Key.Escape)) {
+						end();
+						return;
+					}
+					requestAnimationFrame(main);
+					win.clear(GlClearMask.Color);
+					shader.use();
+					quad.bindVAO();
+					shader.setVec2f("pos", man.glMousePos());
+					shader.setFloat("aspect", man.winAspectX());
+					shader.setMat2f("rot", Mat2f32.rotation(rot));
+					shader.draw(quad.nTris());
+				};
+				const end = () => {
+					win.clear(GlClearMask.Color);
+					win.free();
+				};
+				main();
+			} catch (e) {
+				console.error(e);
+				win.free();
+			}
+		});
+	</script>
+</body>
+
 </html>

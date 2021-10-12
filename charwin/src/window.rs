@@ -78,35 +78,82 @@ pub trait EventManager: 'static {
     fn total_scroll(&self) -> (f64, f64);
     fn screen_size_changed(&self) -> ((i32, i32), bool);
     fn process_events(&mut self, events: &Vec<WindowEvent>);
+    fn cursor_on_window(&self) -> bool;
 
+    /// Whether the left mouse button is pressed
+    ///
+    /// Example code
+    /// let man = DefaultEventManager::new();
+    /// man.process_events(&vec![WindowEvent::MouseButtonDown(MouseButton::Button1)]);
+    /// if man.mouse_left_pressed() {
+    ///     println!("LMB pressed");
+    /// }
     fn mouse_left_pressed(&self) -> bool {
         self.mouse_pressed(MouseButton::Button1)
     }
+    /// Whether the middle mouse button is pressed
+    ///
+    /// Example code
+    /// let man = DefaultEventManager::new();
+    /// man.process_events(&vec![WindowEvent::MouseButtonDown(MouseButton::Button2)]);
+    /// if man.mouse_middle_pressed() {
+    ///     println!("MMB pressed");
+    /// }
     fn mouse_middle_pressed(&self) -> bool {
         self.mouse_pressed(MouseButton::Button2)
     }
+    /// Whether the right mouse button is pressed
+    ///
+    /// Example code
+    /// let man = DefaultEventManager::new();
+    /// man.process_events(&vec![WindowEvent::MouseButtonDown(MouseButton::Button3)]);
+    /// if man.mouse_right_pressed() {
+    ///     println!("RMB pressed");
+    /// }
     fn mouse_right_pressed(&self) -> bool {
         self.mouse_pressed(MouseButton::Button3)
     }
-    /// Returns cursor pos as a value between 0 and where 0 is the left of the window and 1 is the right.
+    /// Returns normalized cursor x coordinate.
+    ///
+    /// Example code
+    /// println!("Mouse x pos: {}", man.mouse_x());
     fn mouse_x(&self) -> f64 {
         self.mouse_pos().0
     }
-    /// Returns cursor pos as a value between 0 and 1 where 0 is the bottom of the window and 1 is the top.
+    /// Returns normalized cursor x coordinate.
+    ///
+    /// Example code
+    /// println!("Mouse y pos: {}", man.mouse_y());
     fn mouse_y(&self) -> f64 {
         self.mouse_pos().1
     }
+    /// Returns the cursor pos in normalized OpenGl coordinates
     fn gl_mouse_vec(&self) -> Vec2F {
         Vec2F::new(self.mouse_x() as f32, 1.0 - self.mouse_y() as f32) * 2.0 - 1.0
     }
+    /// Returns the width of the window
     fn win_width(&self) -> u32 {
         self.screen_size_changed().0 .0 as u32
     }
+    /// Returns the height of the window
     fn win_height(&self) -> u32 {
         self.screen_size_changed().0 .1 as u32
     }
-    fn win_aspect(&self) -> f32 {
+    /// Returns a tuple with the width and height of the window
+    fn win_size(&self) -> (u32, u32) {
+        (self.win_width(), self.win_height())
+    }
+    /// Returns the window width divided by the window height
+    fn win_aspect_x(&self) -> f32 {
         self.win_width() as f32 / self.win_height() as f32
+    }
+    /// Returns the window height divided by the window width
+    fn win_aspect_y(&self) -> f32 {
+        self.win_height() as f32 / self.win_width() as f32
+    }
+    /// Returns the window x and y aspects as a tuple
+    fn win_aspects(&self) -> (f32, f32) {
+        (self.win_aspect_x(), self.win_aspect_y())
     }
 }
 
@@ -145,6 +192,9 @@ impl EventManager for DefaultEventManager {
     fn screen_size_changed(&self) -> ((i32, i32), bool) {
         self.win_size
     }
+    fn cursor_on_window(&self) -> bool {
+        self.cursor_on_window
+    }
     fn mouse_pos(&self) -> (f64, f64) {
         self.mouse_pos
     }
@@ -172,7 +222,6 @@ impl EventManager for DefaultEventManager {
         }
     }
     fn process_events(&mut self, events: &Vec<WindowEvent>) {
-        // crate::platform::dbg_log(&format!("Self: {:?}", self));
         self.scroll_diff = (0.0, 0.0);
         self.win_pos.1 = false;
         self.win_size.1 = false;
@@ -277,9 +326,9 @@ impl DefaultEventManager {
     pub fn wwin_size(&self) -> Vec2F {
         Vec2F::new(self.win_width() as f32, self.win_height() as f32)
     }
-    #[wasm_bindgen(js_name = winAspect)]
-    pub fn wwin_aspect(&self) -> f32 {
-        self.win_aspect()
+    #[wasm_bindgen(js_name = winAspectX)]
+    pub fn wwin_aspect_x(&self) -> f32 {
+        self.win_aspect_x()
     }
     #[wasm_bindgen(js_name = glMousePos)]
     pub fn wgl_mouse_pos(&self) -> Vec2F {
@@ -287,7 +336,7 @@ impl DefaultEventManager {
     }
 }
 
-/// A common set of functions for each platform.
+/// A common set of window functions for each platform.
 pub trait AbstractWindow {
     fn set_fullscreen(&mut self);
     fn set_windowed(&mut self);
@@ -302,6 +351,9 @@ pub trait AbstractWindow {
     fn get_pos(&self) -> (i32, i32);
     fn get_gl_context(&mut self) -> Context;
 
+    fn clear_colour(&mut self) {
+        self.clear(&[GlClearMask::Color]);
+    }
     fn set_clear_colour(&mut self, r: f32, g: f32, b: f32, a: f32) {
         self.get_gl_context().clear_color(r, g, b, a);
     }
@@ -340,66 +392,210 @@ impl VertexAttrib {
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlDrawMode {
-    Triangles = 0b1,
-    Points = 0b10,
-    LineStrip = 0b100,
-    LineLoop = 0b1000,
-    Lines = 0b10000,
-    TriangleStrip = 0b100000,
-    TriangleFan = 0b1000000,
+    Triangles = 0x1,
+    Points = 0x2,
+    LineStrip = 0x4,
+    LineLoop = 0x8,
+    Lines = 0x10,
+    TriangleStrip = 0x20,
+    TriangleFan = 0x40,
 }
 #[repr(i32)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlBufferType {
-    ArrayBuffer = 0b1,
-    AtomicCounterBuffer = 0b10,
-    CopyReadBuffer = 0b100,
-    CopyWriteBuffer = 0b1000,
-    DispatchIndirectBuffer = 0b10000,
-    DrawIndirectBuffer = 0b100000,
-    ElementArrayBuffer = 0b1000000,
-    PixelPackBuffer = 0b10000000,
-    PixelUnpackBuffer = 0b100000000,
-    QueryBuffer = 0b1000000000,
-    ShaderStorageBuffer = 0b10000000000,
-    TextureBuffer = 0b100000000000,
-    TransformFeedbackBuffer = 0b1000000000000,
-    UniformBuffer = 0b10000000000000,
+    ArrayBuffer = 0x1,
+    AtomicCounterBuffer = 0x2,
+    CopyReadBuffer = 0x4,
+    CopyWriteBuffer = 0x8,
+    DispatchIndirectBuffer = 0x10,
+    DrawIndirectBuffer = 0x20,
+    ElementArrayBuffer = 0x40,
+    PixelPackBuffer = 0x80,
+    PixelUnpackBuffer = 0x100,
+    QueryBuffer = 0x200,
+    ShaderStorageBuffer = 0x400,
+    TextureBuffer = 0x800,
+    TransformFeedbackBuffer = 0x1000,
+    UniformBuffer = 0x2000,
 }
 #[repr(i32)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlStorageMode {
-    Static = 0b1,
-    Dynamic = 0b10,
+    Static = 0x1,
+    Dynamic = 0x2,
 }
 #[repr(i32)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlShaderType {
-    Vertex = 0b1,
-    Fragment = 0b10,
-    TessControl = 0b100,
-    TessEvaluation = 0b1000,
-    Geometry = 0b10000,
-    Compute = 0b100000,
+    Vertex = 0x1,
+    Fragment = 0x2,
+    TessControl = 0x4,
+    TessEvaluation = 0x8,
+    Geometry = 0x10,
+    Compute = 0x20,
 }
 #[repr(i32)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlClearMask {
-    Color = 0b1,
-    Depth = 0b10,
-    Accum = 0b100,
-    Stencil = 0b1000,
+    Color = 0x1,
+    Depth = 0x2,
+    Accum = 0x4,
+    Stencil = 0x8,
 }
+
 #[repr(i64)]
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlFeature {
-    DepthBuffer = 0b1,
+	AlphaTest = 				0x1,
+	AutoNormal = 				0x2,
+	Blend = 					0x4,
+	ColorLogicOp = 				0x8,
+	ColorMaterial = 			0x10,
+	ColorSum = 					0x20,
+	ColorTable = 				0x40,
+	Convolution1D = 			0x80,
+	Convolution2D = 			0x100,
+	CullFace = 					0x200,
+	DepthTest = 				0x400,
+	Dither = 					0x800,
+	Fog = 						0x1000,
+	Histogram = 				0x2000,
+	IndexLogicOp = 				0x4000,
+	Lighting = 					0x8000,
+	LineSmooth = 				0x10000,
+	LineStipple = 				0x20000,
+	MinMax = 					0x40000,
+	Multisample = 				0x80000,
+	Normalize = 				0x100000,
+	PointSmooth = 				0x200000,
+	PointSprite = 				0x400000,
+	PolygonOffsetFill = 		0x800000,
+	PolygonOffsetLine = 		0x1000000,
+	PolygonOffsetPoint = 		0x2000000,
+	PolygonSmooth = 			0x4000000,
+	PolygonStipple = 			0x8000000,
+	PostColorMatrixColorTable = 0x10000000,
+	PostConvolutionColorTable = 0x20000000,
+	RescaleNormal = 			0x40000000,
+	SampleAlphaToCoverage = 	0x80000000,
+	SampleAlphaToOne = 			0x100000000,
+	SampleCoverage = 			0x200000000,
+	Seperable2D = 				0x400000000,
+	ScissorTest = 				0x800000000,
+	StencilTest = 				0x1000000000,
+	Texture1D = 				0x2000000000,
+	Texture2D = 				0x4000000000,
+	Texture3D = 				0x8000000000,
+	TextureCubeMap =			0x10000000000,
+	TextureGenQ = 				0x20000000000,
+	TextureGenR = 				0x40000000000,
+	TextureGenS = 				0x80000000000,
+	TextureGenT = 				0x100000000000,
+	VertexProgramPointSize = 	0x200000000000,
+	VertexProgramTwoSide = 		0x400000000000,	
 }
+#[repr(i32)]
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum GlTextureFormat {
+	Texture2D = 0x1, 
+	ProxyTexture2D = 0x2, 
+	Texture1DArray = 0x4, 
+	ProxyTexture1DArray = 0x8, 
+	TextureRectangle = 0x10, 
+	ProxyTextureRectangle = 0x20, 
+	CubeMapPositiveX = 0x40, 
+	CubeMapNegativeX = 0x80,
+	CubeMapPositiveY = 0x100, 
+	CubeMapNegativeY = 0x200, 
+	CubeMapPositiveZ = 0x400, 
+	CubeMapNegativeZ = 0x800, 
+	ProxyCubeMap = 0x1000,
+}
+#[repr(i32)]
+#[cfg_attr(target_family = "wasm", wasm_bindgen)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum GlInternalTextureFormat {
+	DepthComponent,
+	DepthStencil,
+	Red,
+	RG,
+	RGB,
+	RGBA,
+	R8,
+	R8SNorm,
+	R16,
+	R16SNorm,
+	RG8,
+	RG8SNorm,
+	RG16,
+	RG16SNorm,
+	R3G3B2,
+	RGB4,
+	RGB5,
+	RGB8,
+	RGB8SNorm,
+	RGB10,
+	RGB12,
+	RGB16Snorm,
+	RGBA2,
+	RGBA4,
+	RGB5A1,
+	RGBA8,
+	RGBA8SNorm,
+	RGB10A2,
+	RGB10A2UI,
+	RGBA12,
+	RGBA16,
+	SRGB8,
+	SRGBAlpha8,
+	R16F,
+	RG16F,
+	RGB16F,
+	RGBA16F,
+	R32F,
+	RG32F,
+	RGB32F,
+	RGBA32F,
+	R11FG11FB10F,
+	RGB9E5,
+	R8I,
+	R8UI,
+	R16I,
+	R16UI,
+	R32I,
+	R32UI,
+	RG8I,
+	RG8UI,
+	RG16I,
+	RG16UI,
+	RG32I,
+	RG32UI,
+	RGB8I,
+	RGB8UI,
+	RGB16I,
+	RGB16UI,
+	RGB32I,
+	RGB32UI,
+	RGBA8I,
+	RGBA8UI,
+	RGBA16I,
+	RGBA16UI,
+	RGBA32I,
+	RGBA32UI,
+	CompressedRed,
+	CompressedRG,
+	CompressedRGB,
+	CompressedRGBA,
+	CompressedSRGB,
+	CompressedSRGBAlpha,
+}
+
 
 #[allow(drop_bounds)]
 pub trait GlBindable: Sized + Drop {
@@ -413,13 +609,11 @@ pub trait GlBuffer: GlBindable {
     fn buffer_sub_data(&self, start: usize, size: usize, data: *const f32);
     fn get_buffer_sub_data(&self, start: usize, size: usize, recv: *mut f32);
     fn get_type(&self) -> GlBufferType;
-    fn delete(&mut self);
 }
 pub trait GlVertexArray: GlBindable {
     fn new(w: &Window) -> Self;
     fn attrib_ptr(&self, v: &VertexAttrib);
     fn remove_attrib_ptr(&self, v: &VertexAttrib);
-    fn delete(&mut self);
 }
 pub trait GlProgram: GlBindable {
     type ShaderLoc: GlShaderLoc;
@@ -441,7 +635,6 @@ pub trait GlProgram: GlBindable {
     fn uniform_mat4f(&self, loc: &Self::ShaderLoc, v: &[f32]);
     fn uniform_mat3f(&self, loc: &Self::ShaderLoc, v: &[f32]);
     fn uniform_mat2f(&self, loc: &Self::ShaderLoc, v: &[f32]);
-    fn delete(&mut self);
 }
 #[allow(drop_bounds)]
 pub trait GlShader: Sized + Drop {
@@ -450,7 +643,6 @@ pub trait GlShader: Sized + Drop {
     fn compile(&self);
     fn get_compile_status(&self) -> Option<String>;
     fn get_type(&self) -> GlShaderType;
-    fn delete(&mut self);
 
     fn from_source(w: &Window, st: GlShaderType, src: &str) -> Result<Self, String> {
         let ret = Self::new(w, st);
@@ -462,6 +654,10 @@ pub trait GlShader: Sized + Drop {
             Ok(ret)
         }
     }
+}
+pub trait GlTexture: GlBindable {
+    fn new(w: &Window) -> Self;
+	fn set_texture(&self, tex: *const u8);
 }
 pub trait GlContext: Sized {
     fn new(w: &mut Window) -> Self;
