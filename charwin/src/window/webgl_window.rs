@@ -2,11 +2,7 @@ use crate::char_panic;
 use crate::input::{Key, MouseButton};
 use crate::platform::{Context, Window};
 use crate::state::State;
-use crate::window::{
-    AbstractWindow, AbstractWindowFactory, EventManager, GlBindable, GlBuffer, GlBufferType,
-    GlClearMask, GlContext, GlDrawMode, GlFeature, GlProgram, GlShader, GlShaderLoc, GlShaderType,
-    GlStorageMode, GlVertexArray, VertexAttrib, WindowCreateArgs, WindowEvent,
-};
+use crate::window::*;
 use js_sys::Float32Array;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -18,7 +14,8 @@ use wasm_bindgen::JsCast;
 use web_sys::{
     Event, HtmlCanvasElement, KeyboardEvent, MouseEvent, WebGl2RenderingContext,
     WebGlBuffer as JsSysWebGlBuffer, WebGlProgram as JsSysWebGlProgram,
-    WebGlShader as JsSysWebGlShader, WebGlUniformLocation as JsSysWebGlUniformLocation,
+    WebGlShader as JsSysWebGlShader, WebGlTexture as JsSysWebGlTexture,
+    WebGlUniformLocation as JsSysWebGlUniformLocation,
     WebGlVertexArrayObject as JsSysWebGlVertexArray, WheelEvent,
 };
 
@@ -671,6 +668,26 @@ pub struct WebGlContext {
     context: Arc<Mutex<WebGl2RenderingContext>>,
     features: HashSet<GlFeature>,
 }
+impl WebGlContext {
+    fn gl_feature(f: &GlFeature) -> u32 {
+        use GlFeature::*;
+        match f {
+            Blend => WebGl2RenderingContext::BLEND,
+            CullFace => WebGl2RenderingContext::CULL_FACE,
+            DepthTest => WebGl2RenderingContext::DEPTH_TEST,
+            Dither => WebGl2RenderingContext::DITHER,
+            PolygonOffsetFill => WebGl2RenderingContext::POLYGON_OFFSET_FILL,
+            SampleAlphaToCoverage => WebGl2RenderingContext::SAMPLE_ALPHA_TO_COVERAGE,
+            SampleCoverage => WebGl2RenderingContext::SAMPLE_COVERAGE,
+            ScissorTest => WebGl2RenderingContext::SCISSOR_TEST,
+            StencilTest => WebGl2RenderingContext::STENCIL_TEST,
+            TextureCubeMap => WebGl2RenderingContext::TEXTURE_CUBE_MAP,
+            _ => {
+                char_panic!("WebGL: GlFeature {:?} not supported for wasm.", f);
+            }
+        }
+    }
+}
 impl GlContext for WebGlContext {
     fn new(w: &mut Window) -> Self {
         Self {
@@ -703,11 +720,17 @@ impl GlContext for WebGlContext {
     }
     fn enable(&mut self, feature: GlFeature) {
         self.features.insert(feature);
-        char_panic!("WebGlContext.enable is unimplemented.");
+        self.context
+            .lock()
+            .unwrap()
+            .enable(Self::gl_feature(&feature));
     }
     fn disable(&mut self, feature: GlFeature) {
         self.features.remove(&feature);
-        char_panic!("WebGlContext.disable is unimplemented.");
+        self.context
+            .lock()
+            .unwrap()
+            .disable(Self::gl_feature(&feature));
     }
     fn get_enabled_features(&self) -> Vec<GlFeature> {
         self.features.iter().map(|x| *x).collect()
@@ -1117,5 +1140,116 @@ impl Drop for WebGlProgram {
             .lock()
             .unwrap()
             .delete_program(self.program.as_ref());
+    }
+}
+
+pub struct WebGlTexture2D {
+    tex: Option<JsSysWebGlTexture>,
+    context: Arc<Mutex<WebGl2RenderingContext>>,
+    slot: u32,
+}
+impl WebGlTexture2D {
+    fn gl_texture_type(t: &GlTextureType) -> u32 {
+        use GlTextureType::*;
+        match t {
+            Texture2D => WebGl2RenderingContext::TEXTURE_2D,
+            CubeMapPositiveX => WebGl2RenderingContext::TEXTURE_CUBE_MAP_POSITIVE_X,
+            CubeMapNegativeX => WebGl2RenderingContext::TEXTURE_CUBE_MAP_NEGATIVE_X,
+            CubeMapPositiveY => WebGl2RenderingContext::TEXTURE_CUBE_MAP_POSITIVE_Y,
+            CubeMapNegativeY => WebGl2RenderingContext::TEXTURE_CUBE_MAP_NEGATIVE_Y,
+            CubeMapPositiveZ => WebGl2RenderingContext::TEXTURE_CUBE_MAP_POSITIVE_Z,
+            CubeMapNegativeZ => WebGl2RenderingContext::TEXTURE_CUBE_MAP_NEGATIVE_Z,
+            _ => {
+                char_panic!("WebGL: GlTextureType {:?} not supported on web.", t);
+            }
+        }
+    }
+    fn gl_internal_fmt(f: &GlInternalTextureFormat) -> i32 {
+        use GlInternalTextureFormat::*;
+        match f {
+            _ => {
+                char_panic!(
+                    "WebGL: GlInternalTextureFormat {:?} not supported on web.",
+                    f
+                );
+            }
+        }
+    }
+    fn gl_img_fmt(f: &GlImagePixelFormat) -> u32 {
+        use GlImagePixelFormat::*;
+        match f {
+            _ => {
+                char_panic!("WebGL: GlImagePixelFormat {:?} not supported on web.", f);
+            }
+        }
+    }
+    fn gl_px_fmt(f: &GlImagePixelType) -> u32 {
+        use GlImagePixelType::*;
+        match f {
+            _ => {
+                char_panic!("WebGL: GlImagePixelType {:?} not supported on web.", f);
+            }
+        }
+    }
+}
+impl GlBindable for WebGlTexture2D {
+    fn bind(&self) {
+        self.context.lock().unwrap().active_texture(self.slot);
+        self.context
+            .lock()
+            .unwrap()
+            .bind_texture(WebGl2RenderingContext::TEXTURE_2D, self.tex.as_ref());
+    }
+    fn unbind(&self) {
+        self.context.lock().unwrap().active_texture(self.slot);
+        self.context
+            .lock()
+            .unwrap()
+            .bind_texture(WebGl2RenderingContext::TEXTURE_2D, None);
+    }
+}
+impl GlTexture2D for WebGlTexture2D {
+    fn new(w: &mut Window) -> Self {
+        Self {
+            context: w.get_context_arc(),
+            tex: w.get_context_arc().lock().unwrap().create_texture(),
+            slot: WebGl2RenderingContext::TEXTURE0,
+        }
+    }
+    fn set_texture(
+        &self,
+        tex: *const u8,
+        width: u32,
+        height: u32,
+        internal_fmt: GlInternalTextureFormat,
+        img_fmt: GlImagePixelFormat,
+        px_type: GlImagePixelType,
+        mipmaps: u32,
+    ) {
+        let gl = self.context.lock().unwrap();
+        gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
+            WebGl2RenderingContext::TEXTURE_2D,
+            mipmaps as i32,
+            Self::gl_internal_fmt(&internal_fmt),
+            width as i32,
+            height as i32,
+            0,
+            Self::gl_img_fmt(&img_fmt),
+            Self::gl_px_fmt(&px_type),
+            // Some(tex as &[u8]),
+            None,
+        );
+        self.unbind();
+    }
+    fn set_slot(&mut self, slot: u32) {
+        self.slot = WebGl2RenderingContext::TEXTURE0 + slot;
+    }
+}
+impl Drop for WebGlTexture2D {
+    fn drop(&mut self) {
+        self.context
+            .lock()
+            .unwrap()
+            .delete_texture(self.tex.as_ref());
     }
 }

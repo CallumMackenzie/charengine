@@ -215,6 +215,41 @@ fn gl_event_to_window_event(gl_event: GlWindowEvent) -> Option<WindowEvent> {
 pub struct NativeGlContext {
     features: HashSet<GlFeature>,
 }
+impl NativeGlContext {
+    fn gl_feature(f: &GlFeature) -> GLenum {
+        use GlFeature::*;
+        match f {
+            // AlphaTest => gl::ALPHA_TEST,
+            // AutoNormal => gl::AUTO_NORMAL,
+            Blend => gl::BLEND,
+            ColorLogicOp => gl::COLOR_LOGIC_OP,
+            // ColorMaterial => gl::COLOR_MATERIAL,
+            // ColorSum => gl::COLOR_SUM,
+            // ColorTable => gl::COLOR_TABLE,
+            CullFace => gl::CULL_FACE,
+            DepthTest => gl::DEPTH_TEST,
+            Dither => gl::DITHER,
+            LineSmooth => gl::LINE_SMOOTH,
+            PolygonOffsetFill => gl::POLYGON_OFFSET_FILL,
+            PolygonOffsetLine => gl::POLYGON_OFFSET_LINE,
+            PolygonOffsetPoint => gl::POLYGON_OFFSET_POINT,
+            PolygonSmooth => gl::POLYGON_SMOOTH,
+            SampleAlphaToCoverage => gl::SAMPLE_ALPHA_TO_COVERAGE,
+            SampleAlphaToOne => gl::SAMPLE_ALPHA_TO_ONE,
+            SampleCoverage => gl::SAMPLE_COVERAGE,
+            ScissorTest => gl::SCISSOR_TEST,
+            StencilTest => gl::STENCIL_TEST,
+            Texture1D => gl::TEXTURE_1D,
+            Texture2D => gl::TEXTURE_2D,
+            Texture3D => gl::TEXTURE_3D,
+            TextureCubeMap => gl::TEXTURE_CUBE_MAP,
+            VertexProgramPointSize => gl::VERTEX_PROGRAM_POINT_SIZE,
+            _ => {
+                panic!("WebGL: GlFeature {:?} not supported for wasm.", f);
+            }
+        }
+    }
+}
 impl GlContext for NativeGlContext {
     fn new(_: &mut Window) -> Self {
         Self {
@@ -248,11 +283,11 @@ impl GlContext for NativeGlContext {
     }
     fn enable(&mut self, feature: GlFeature) {
         self.features.insert(feature);
-        unimplemented!();
+        unsafe { gl::Enable(Self::gl_feature(&feature)) }
     }
     fn disable(&mut self, feature: GlFeature) {
         self.features.remove(&feature);
-        unimplemented!();
+        unsafe { gl::Disable(Self::gl_feature(&feature)) }
     }
     fn get_enabled_features(&self) -> Vec<GlFeature> {
         self.features.iter().map(|x| *x).collect()
@@ -642,3 +677,5 @@ impl Drop for NativeGlProgram {
         }
     }
 }
+
+pub struct NativeGlTexture2D {}

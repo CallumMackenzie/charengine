@@ -119,6 +119,5 @@ mod tests {
             WindowSizeMode::Windowed,
         ));
         window.render_loop(app, manager);
-		
     }
 }

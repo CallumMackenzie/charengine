@@ -10,6 +10,8 @@ pub type Buffer = crate::window::opengl_window::NativeGlBuffer;
 pub type VertexArray = crate::window::opengl_window::NativeGlVertexArray;
 #[cfg(not(target_family = "wasm"))]
 pub type Program = crate::window::opengl_window::NativeGlProgram;
+// #[cfg(not(target_family = "wasm"))]
+// pub type Texture = crate::window::opengl_window::NativeGlTexture;
 
 #[cfg(target_family = "wasm")]
 pub type Window = crate::window::webgl_window::WebGlWindow;
@@ -23,6 +25,8 @@ pub type Buffer = crate::window::webgl_window::WebGlBuffer;
 pub type VertexArray = crate::window::webgl_window::WebGlVertexArray;
 #[cfg(target_family = "wasm")]
 pub type Program = crate::window::webgl_window::WebGlProgram;
+// #[cfg(target_family = "wasm")]
+// pub type Texture = crate::window::webgl_window::WebGlTexture;
 
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;

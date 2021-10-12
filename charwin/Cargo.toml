@@ -32,6 +32,7 @@ features = [
   'WebGlProgram',
   'WebGlShader',
   'WebGlUniformLocation',
+  'WebGlTexture',
   'Window',
   'EventListener',
   'Event',
