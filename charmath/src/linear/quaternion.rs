@@ -175,7 +175,7 @@ macro_rules! gen_wasm_quat {
     ($QUAT:ident, $NUM:ident, $SVEC:ident) => {
         #[cfg_attr(target_family = "wasm", wasm_bindgen)]
         #[derive(Debug)]
-		#[repr(C)]
+        #[repr(C)]
         pub struct $QUAT {
             vec: [$NUM; 4],
         }

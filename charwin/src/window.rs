@@ -6,10 +6,12 @@ pub mod webgl_window;
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
 
+use crate::data::GPUTexture;
 use crate::input::{Key, MouseButton};
 use crate::platform::{Context, Window};
 use charmath::linear::vector::{Vec2, Vec2F};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 /// Window size states.
 #[repr(u8)]
@@ -350,7 +352,11 @@ pub trait AbstractWindow {
     fn get_size(&self) -> (i32, i32);
     fn get_pos(&self) -> (i32, i32);
     fn get_gl_context(&mut self) -> Context;
+    fn load_texture_rgba(&mut self, path: &str, mips: u32) -> Arc<Mutex<GPUTexture>>;
 
+    fn load_tex_rgba_no_mip(&mut self, path: &str) -> Arc<Mutex<GPUTexture>> {
+        self.load_texture_rgba(path, 0)
+    }
     fn clear_colour(&mut self) {
         self.clear(&[GlClearMask::Color]);
     }
@@ -499,8 +505,6 @@ pub enum GlTextureType {
 #[cfg_attr(target_family = "wasm", wasm_bindgen)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum GlInternalTextureFormat {
-    DepthComponent,
-    DepthStencil,
     Red,
     RG,
     RGB,
@@ -531,7 +535,7 @@ pub enum GlInternalTextureFormat {
     RGBA12,
     RGBA16,
     SRGB8,
-    SRGBAlpha8,
+    SRGB8Alpha8,
     R16F,
     RG16F,
     RGB16F,
@@ -670,14 +674,15 @@ pub trait GlTexture2D: GlBindable {
     fn set_texture(
         &self,
         tex: *const u8,
-		width: u32,
-		height: u32,
+        width: u32,
+        height: u32,
         internal_fmt: GlInternalTextureFormat,
         img_fmt: GlImagePixelFormat,
         px_type: GlImagePixelType,
-		mipmaps: u32,
+        mipmaps: u32,
+        pixel_byte_size: usize,
     );
-	fn set_slot(&mut self, slot: u32);
+    fn set_slot(&mut self, slot: u32);
 }
 pub trait GlContext: Sized {
     fn new(w: &mut Window) -> Self;

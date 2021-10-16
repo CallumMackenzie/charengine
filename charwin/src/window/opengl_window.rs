@@ -5,22 +5,34 @@ use glfw::{
 use std::ffi::CString;
 use std::ptr;
 extern crate gl;
+use crate::data::{CPUBuffer, DataBuffer, DynamicImageColorable, GPUTexture};
 use crate::input::{Key, MouseButton};
 use crate::platform::{Context, Window};
 use crate::state::{FrameManager, State};
-use crate::window::{
-    AbstractWindow, AbstractWindowFactory, EventManager, GlBindable, GlBuffer, GlBufferType,
-    GlClearMask, GlContext, GlDrawMode, GlFeature, GlProgram, GlShader, GlShaderLoc, GlShaderType,
-    GlStorageMode, GlVertexArray, VertexAttrib, WindowCreateArgs, WindowEvent, WindowSizeMode,
-};
+use crate::window::*;
 use gl::types::{GLbitfield, GLchar, GLenum, GLint, GLintptr, GLsizei, GLsizeiptr, GLuint, GLvoid};
-use std::collections::HashSet;
+use image::io::Reader as ImageReader;
+use image::DynamicImage;
+use std::collections::{HashMap, HashSet};
+use std::sync::mpsc::{channel, Receiver, TryRecvError};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::thread::JoinHandle;
 
 pub struct NativeGlWindow {
     glfw: Glfw,
     window: GlfwWindow,
-    gl_events: std::sync::mpsc::Receiver<(f64, GlWindowEvent)>,
+    gl_events: Receiver<(f64, GlWindowEvent)>,
     events: Vec<WindowEvent>,
+    image_load_threads: HashMap<
+        u32,
+        (
+            Arc<Mutex<GPUTexture>>,
+            JoinHandle<DynamicImage>,
+            Receiver<()>,
+        ),
+    >,
+    image_thread_count: u32,
 }
 
 impl NativeGlWindow {
@@ -93,6 +105,36 @@ impl NativeGlWindow {
             }
         }
     }
+	fn poll_image_threads(&mut self) {
+        let mut completed_threads = Vec::<(bool, u32)>::with_capacity(self.image_load_threads.len());
+        for (index, thread) in self.image_load_threads.iter() {
+            match thread.2.try_recv() {
+                Ok(_) => {
+					completed_threads.push((true, *index));
+				}
+                Err(TryRecvError::Disconnected) => {
+                    eprintln!("Image thread {} disconnected.", index);
+                    completed_threads.push((false, *index));
+                }
+				_ => {}
+            }
+        }
+        for (success, index) in completed_threads {
+            if success {
+                let (tex, thread, _) = self.image_load_threads.remove(&index).unwrap();
+                match thread.join() {
+                    Ok(data) => {
+                        tex.lock().unwrap().set_data(&data);
+                    }
+                    Err(e) => {
+						eprintln!("Image thread {} error: {:?}", index, e);
+					}
+                }
+            } else {
+                self.image_load_threads.remove(&index);
+            }
+        }
+	}
 }
 
 impl AbstractWindow for NativeGlWindow {
@@ -122,6 +164,7 @@ impl AbstractWindow for NativeGlWindow {
                 self.events.push(event);
             }
         }
+		self.poll_image_threads();
     }
     fn get_events(&mut self) -> Vec<WindowEvent> {
         let mut events = Vec::new();
@@ -141,6 +184,33 @@ impl AbstractWindow for NativeGlWindow {
     }
     fn get_pos(&self) -> (i32, i32) {
         self.window.get_pos()
+    }
+    fn load_texture_rgba(&mut self, path: &str, _mips: u32) -> Arc<Mutex<GPUTexture>> {
+        let tex = Arc::new(Mutex::new(
+            DynamicImage::solid_color([0xff, 0x80, 0xff, 0xff]).to_gpu_buffer(self),
+        ));
+        let (sender, reciever) = channel();
+        let image_src: String = path.into();
+        let handle = thread::spawn(move || {
+            let ret = ImageReader::open(&image_src)
+                .unwrap_or_else(|e| {
+                    panic!("Could not load image \"{}\": {:?}.", image_src, e);
+                })
+                .decode()
+                .unwrap_or_else(|e| {
+                    panic!("Could not decode image \"{}\": {:?}.", image_src, e);
+                });
+            sender.send(()).unwrap_or_else(|e| {
+                panic!("Could not send message: {:?}", e);
+            });
+            ret
+        });
+        self.image_load_threads.insert(
+            self.image_thread_count,
+            (Arc::clone(&tex), handle, reciever),
+        );
+        self.image_thread_count += 1;
+        tex
     }
 }
 
@@ -174,6 +244,8 @@ impl AbstractWindowFactory for NativeGlWindow {
             window: glfw_window,
             gl_events: glfw_events,
             events: Vec::new(),
+            image_load_threads: HashMap::new(),
+            image_thread_count: 0,
         }
     }
 }
@@ -678,4 +750,180 @@ impl Drop for NativeGlProgram {
     }
 }
 
-pub struct NativeGlTexture2D {}
+pub struct NativeGlTexture2D {
+    slot: u32,
+    tex: GLuint,
+}
+impl NativeGlTexture2D {
+    pub fn gl_texture_type(t: &GlTextureType) -> u32 {
+        use GlTextureType::*;
+        match t {
+            Texture2D => gl::TEXTURE_2D,
+            CubeMapPositiveX => gl::TEXTURE_CUBE_MAP_POSITIVE_X,
+            CubeMapNegativeX => gl::TEXTURE_CUBE_MAP_NEGATIVE_X,
+            CubeMapPositiveY => gl::TEXTURE_CUBE_MAP_POSITIVE_Y,
+            CubeMapNegativeY => gl::TEXTURE_CUBE_MAP_NEGATIVE_Y,
+            CubeMapPositiveZ => gl::TEXTURE_CUBE_MAP_POSITIVE_Z,
+            CubeMapNegativeZ => gl::TEXTURE_CUBE_MAP_NEGATIVE_Z,
+            ProxyTexture2D => gl::PROXY_TEXTURE_2D,
+            ProxyTexture1DArray => gl::PROXY_TEXTURE_1D_ARRAY,
+            Texture1DArray => gl::TEXTURE_1D_ARRAY,
+            TextureRectangle => gl::TEXTURE_RECTANGLE,
+            ProxyTextureRectangle => gl::PROXY_TEXTURE_RECTANGLE,
+            ProxyCubeMap => gl::PROXY_TEXTURE_CUBE_MAP,
+        }
+    }
+    pub fn gl_internal_fmt(f: &GlInternalTextureFormat) -> u32 {
+        use GlInternalTextureFormat::*;
+        match f {
+            Red => gl::RED,
+            RG => gl::RG,
+            RGB => gl::RGB,
+            RGBA => gl::RGBA,
+            R8 => gl::R8,
+            R8SNorm => gl::R8_SNORM,
+            RG8 => gl::RG8,
+            RG8SNorm => gl::RG8_SNORM,
+            RGB8 => gl::RGB8,
+            RGB8SNorm => gl::RGB8_SNORM,
+            RGBA4 => gl::RGBA4,
+            RGB5A1 => gl::RGB5_A1,
+            RGBA8 => gl::RGBA8,
+            RGBA8SNorm => gl::RGBA8_SNORM,
+            RGB10A2 => gl::RGB10_A2,
+            RGB10A2UI => gl::RGB10_A2UI,
+            SRGB8 => gl::SRGB8,
+            SRGB8Alpha8 => gl::SRGB8_ALPHA8,
+            R16F => gl::R16F,
+            RG16F => gl::RG16F,
+            RGBA16F => gl::RGBA16F,
+            R32F => gl::R32F,
+            RG32F => gl::RG32F,
+            RGBA32F => gl::RGBA32F,
+            R11FG11FB10F => gl::R11F_G11F_B10F,
+            RGB9E5 => gl::RGB9_E5,
+            R8I => gl::R8I,
+            R8UI => gl::R8UI,
+            R16I => gl::R16I,
+            R16UI => gl::R16UI,
+            R32I => gl::R32I,
+            R32UI => gl::R32UI,
+            RG8I => gl::RG8I,
+            RG8UI => gl::RG8UI,
+            RG16I => gl::RG16I,
+            RG16UI => gl::RG16UI,
+            RG32I => gl::RG32I,
+            RG32UI => gl::RG32UI,
+            RGBA8I => gl::RGBA8I,
+            RGBA16I => gl::RGBA16I,
+            RGBA32I => gl::RGBA32I,
+            _ => {
+                panic!(
+                    "OpenGL: GlInternalTextureFormat {:?} not supported natively.",
+                    f
+                );
+            }
+        }
+    }
+    pub fn gl_img_fmt(f: &GlImagePixelFormat) -> u32 {
+        use GlImagePixelFormat::*;
+        match f {
+            Red => gl::RED,
+            RG => gl::RG,
+            RGB => gl::RGB,
+            RGBA => gl::RGBA,
+            RedInt => gl::RED_INTEGER,
+            RGInt => gl::RG_INTEGER,
+            RGBInt => gl::RGB_INTEGER,
+            RGBAInt => gl::RGBA_INTEGER,
+            DepthComponent => gl::DEPTH_COMPONENT,
+            DepthStencil => gl::DEPTH_STENCIL,
+            _ => {
+                panic!("OpenGL: GlImagePixelFormat {:?} not supported natively.", f);
+            }
+        }
+    }
+    pub fn gl_px_fmt(f: &GlImagePixelType) -> u32 {
+        use GlImagePixelType::*;
+        match f {
+            UnsignedByte => gl::UNSIGNED_BYTE,
+            Byte => gl::BYTE,
+            UnsignedShort => gl::UNSIGNED_SHORT,
+            Short => gl::SHORT,
+            UnsignedInt => gl::UNSIGNED_INT,
+            Int => gl::INT,
+            HalfFloat => gl::HALF_FLOAT,
+            Float => gl::FLOAT,
+        }
+    }
+    pub fn set_params(&self) {
+        unsafe {
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+        }
+    }
+}
+impl GlBindable for NativeGlTexture2D {
+    fn bind(&self) {
+        unsafe {
+            gl::ActiveTexture(self.slot);
+            gl::BindTexture(gl::TEXTURE_2D, self.tex)
+        }
+    }
+    fn unbind(&self) {
+        unsafe {
+            gl::ActiveTexture(self.slot);
+            gl::BindTexture(gl::TEXTURE_2D, gl::NONE)
+        }
+    }
+}
+impl GlTexture2D for NativeGlTexture2D {
+    fn new(_: &mut Window) -> Self {
+        let mut tex = gl::NONE;
+        unsafe {
+            gl::GenTextures(1, &mut tex);
+        }
+        Self {
+            tex,
+            slot: gl::TEXTURE0,
+        }
+    }
+    fn set_texture(
+        &self,
+        tex_ptr: *const u8,
+        width: u32,
+        height: u32,
+        internal_fmt: GlInternalTextureFormat,
+        img_fmt: GlImagePixelFormat,
+        px_type: GlImagePixelType,
+        mipmaps: u32,
+        _px_byte_size: usize,
+    ) {
+        unsafe {
+            self.set_params();
+            gl::TexImage2D(
+                gl::TEXTURE_2D,
+                mipmaps as i32,
+                Self::gl_internal_fmt(&internal_fmt) as i32,
+                width as i32,
+                height as i32,
+                0,
+                Self::gl_img_fmt(&img_fmt),
+                Self::gl_px_fmt(&px_type),
+                tex_ptr as *const GLvoid,
+            );
+        }
+    }
+    fn set_slot(&mut self, slot: u32) {
+        self.slot = gl::TEXTURE0 + slot;
+    }
+}
+impl Drop for NativeGlTexture2D {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteTextures(1, &self.tex);
+        }
+    }
+}

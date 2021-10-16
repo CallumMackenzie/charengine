@@ -1,13 +1,11 @@
 use crate::char_panic;
-use crate::platform::{Buffer, Program, Shader, VertexArray, Window};
-use crate::window::{
-    GlBindable, GlBuffer, GlBufferType, GlDrawMode, GlProgram, GlShader, GlShaderType,
-    GlStorageMode, GlVertexArray, VertexAttrib,
-};
+use crate::platform::{Buffer, Program, Shader, Texture2D, VertexArray, Window};
+use crate::window::*;
 use charmath::linear::matrix::{Mat2F, Mat2f32, Mat4F, Mat4f32, MatrixBase};
 use charmath::linear::vector::{
     Vec2, Vec2f32, Vec2i32, Vec3, Vec3f32, Vec3i32, Vec4, Vec4f32, Vec4i32,
 };
+use image::{ColorType, DynamicImage, GenericImage, GenericImageView};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ops::{Index, IndexMut};
@@ -17,21 +15,19 @@ use wasm_bindgen::prelude::*;
 
 pub trait DataBuffer: Sized {
     type Data: Sized;
-    type DataUnit: Sized;
+    type IndexType: Sized;
     fn set_data(&mut self, data: &Self::Data);
-    fn sub_data(&mut self, start: usize, len: usize, data: &[Self::DataUnit]);
-    fn get_sub_data(&self, start: usize, len: usize) -> Self::Data;
-    fn len(&self) -> usize;
+    fn sub_data(&mut self, start: Self::IndexType, len: Self::IndexType, data: &Self::Data);
+    fn get_data(&self) -> Self::Data;
+    fn get_sub_data(&self, start: Self::IndexType, len: Self::IndexType) -> Self::Data;
+    fn len(&self) -> Self::IndexType;
 
     fn to_data(self) -> Self::Data {
         self.get_data()
     }
-    fn get_data(&self) -> Self::Data {
-        self.get_sub_data(0, self.len())
-    }
 }
 pub trait CPUBuffer: DataBuffer {
-    type GPUType: DataBuffer<Data = Self::Data, DataUnit = Self::DataUnit> + GPUBuffer;
+    type GPUType: DataBuffer<Data = Self::Data, IndexType = Self::IndexType> + GPUBuffer;
 
     fn new() -> Self;
     fn from_data(data: &Self::Data) -> Self {
@@ -46,8 +42,9 @@ pub trait CPUBuffer: DataBuffer {
         Self::GPUType::from_data(win, &self.to_data())
     }
 }
+
 pub trait GPUBuffer: DataBuffer {
-    type CPUType: DataBuffer<Data = Self::Data, DataUnit = Self::DataUnit> + CPUBuffer;
+    type CPUType: DataBuffer<Data = Self::Data, IndexType = Self::IndexType> + CPUBuffer;
     fn new(win: &mut Window) -> Self;
     fn from_data(win: &mut Window, data: &Self::Data) -> Self {
         let mut ret = Self::new(win);
@@ -143,25 +140,22 @@ impl<V: VertexBase> TriCPUBuffer<V> {
 }
 impl<V: VertexBase> DataBuffer for TriCPUBuffer<V> {
     type Data = Vec<Triangle<V>>;
-    type DataUnit = f32;
+    type IndexType = usize;
     fn set_data(&mut self, data: &Self::Data) {
         self.tris.clear();
         for i in 0..data.len() {
             self.tris.push(data[i]);
         }
     }
-    fn sub_data(&mut self, start: usize, len: usize, data: &[Self::DataUnit]) {
+    fn sub_data(&mut self, start: usize, len: usize, data: &Self::Data) {
         if start + len > self.tris.len() {
             char_panic!("CPUTriBuffer.sub_data: Start is too far or len is too long.");
         }
         if data.len() < len {
             char_panic!("CPUTriBuffer.sub_data: Data length is smaller than input length.");
         }
-        unsafe {
-            let tri_float_ptr = self.tris.as_mut_ptr() as *mut f32;
-            for i in 0..len {
-                *tri_float_ptr.offset((start + i) as isize) = data[i];
-            }
+        for i in 0..len {
+            self.tris[i + start] = data[i];
         }
     }
     fn get_sub_data(&self, start: usize, len: usize) -> Self::Data {
@@ -179,6 +173,9 @@ impl<V: VertexBase> DataBuffer for TriCPUBuffer<V> {
     }
     fn len(&self) -> usize {
         self.tris.len()
+    }
+    fn get_data(&self) -> Self::Data {
+        self.get_sub_data(0, self.len())
     }
 }
 impl<V: VertexBase> CPUBuffer for TriCPUBuffer<V> {
@@ -480,7 +477,7 @@ impl<V: VertexBase> GPUBuffer for TriGPUBuffer<V> {
 }
 impl<V: VertexBase> DataBuffer for TriGPUBuffer<V> {
     type Data = Vec<Triangle<V>>;
-    type DataUnit = f32;
+    type IndexType = usize;
     fn set_data(&mut self, data: &Self::Data) {
         self.n_tris = data.len() as i32;
         self.vao.bind();
@@ -496,7 +493,7 @@ impl<V: VertexBase> DataBuffer for TriGPUBuffer<V> {
         self.vbo.unbind();
         self.vao.unbind();
     }
-    fn sub_data(&mut self, start: usize, len: usize, data: &[Self::DataUnit]) {
+    fn sub_data(&mut self, start: usize, len: usize, data: &Self::Data) {
         if data.len() < len {
             char_panic!("TriGPUBuffer.sub_data: Input data size too small.");
         }
@@ -505,9 +502,9 @@ impl<V: VertexBase> DataBuffer for TriGPUBuffer<V> {
         }
         self.vbo.bind();
         self.vbo.buffer_sub_data(
-            start * size_of::<Self::DataUnit>(),
-            len * size_of::<Self::DataUnit>(),
-            &data[0] as *const f32,
+            start * size_of::<V>() * 3,
+            len * size_of::<V>() * 3,
+            data.as_ptr() as *const f32,
         );
         self.vbo.unbind();
     }
@@ -529,6 +526,9 @@ impl<V: VertexBase> DataBuffer for TriGPUBuffer<V> {
     fn len(&self) -> usize {
         self.n_tris as usize
     }
+    fn get_data(&self) -> Self::Data {
+        self.get_sub_data(0, self.len())
+    }
 }
 impl<V: VertexBase> TriGPUBuffer<V> {
     pub fn n_tris(&self) -> i32 {
@@ -536,32 +536,158 @@ impl<V: VertexBase> TriGPUBuffer<V> {
     }
 }
 
-pub struct CPUTexture {
-    pixels: Vec<u32>,
-}
-impl DataBuffer for CPUTexture {
-    type Data = Vec<u32>;
-    type DataUnit = u32;
+impl DataBuffer for DynamicImage {
+    type Data = DynamicImage;
+    type IndexType = (u32, u32);
     fn set_data(&mut self, data: &Self::Data) {
-        self.pixels = Vec::with_capacity(data.len());
-        for i in 0..data.len() {
-            self.pixels.push(data[i]);
+        self.copy_from(&data.view(0, 0, data.width(), data.height()), 0, 0)
+            .unwrap_or_else(|e| {
+                char_panic!("Could not copy image data: {:?}.", e);
+            })
+    }
+    fn sub_data(&mut self, start: Self::IndexType, len: Self::IndexType, data: &Self::Data) {
+        self.copy_from(&data.view(0, 0, len.0, len.1), start.0, start.1)
+            .unwrap_or_else(|e| {
+                char_panic!("Could not copy image data: {:?}.", e);
+            });
+    }
+    fn get_sub_data(&self, start: Self::IndexType, len: Self::IndexType) -> Self::Data {
+        self.crop_imm(start.0, start.1, len.0, len.1)
+    }
+    fn len(&self) -> Self::IndexType {
+        (self.width(), self.height())
+    }
+    fn get_data(&self) -> Self::Data {
+        self.get_sub_data((0, 0), self.len())
+    }
+}
+impl CPUBuffer for DynamicImage {
+    type GPUType = GPUTexture;
+    fn new() -> Self {
+        Self::new_rgba8(0, 0)
+    }
+}
+pub trait DynamicImageColorable {
+    fn solid_color(col: [u8; 4]) -> Self;
+}
+impl DynamicImageColorable for DynamicImage {
+    fn solid_color(col: [u8; 4]) -> Self {
+        let mut default_image = DynamicImage::new_rgba8(1, 1);
+        if let Some(img) = default_image.as_mut_rgba8() {
+            img.put_pixel(0, 0, image::Rgba::from(col));
+        }
+        default_image
+    }
+}
+trait GlImageFormatConvertable {
+    fn gl_image_fmt(&self) -> GlInternalTextureFormat;
+    fn gl_pixel_fmt(&self) -> GlImagePixelFormat;
+    fn gl_pixel_type(&self) -> GlImagePixelType;
+    fn pixel_byte_count(&self) -> usize;
+}
+impl GlImageFormatConvertable for DynamicImage {
+    fn gl_image_fmt(&self) -> GlInternalTextureFormat {
+        use ColorType::*;
+        use GlInternalTextureFormat::*;
+        match self.color() {
+            L8 => R8,
+            L16 => R16,
+            La8 => RG8,
+            La16 => RG16,
+            Rgb8 => RGB8,
+            Rgb16 => RGB12,
+            Rgba8 => RGBA8,
+            Rgba16 => RGBA16,
+            _ => {
+                char_panic!("Cannot find valid gl texture format from image format.");
+            }
         }
     }
-    fn sub_data(&mut self, start: usize, len: usize, data: &[Self::DataUnit]) {
-        for i in 0..len {
-            self.pixels[start + i] = data[i];
+    fn gl_pixel_fmt(&self) -> GlImagePixelFormat {
+        use ColorType::*;
+        use GlImagePixelFormat::*;
+        match self.color() {
+            L8 | L16 => Red,
+            La8 | La16 => RG,
+            Rgb8 | Rgb16 => RGB,
+            Rgba8 | Rgba16 => RGBA,
+            Bgr8 => BGR,
+            Bgra8 => BGRA,
+            _ => {
+                char_panic!("Cannot find valid gl color pixel format from image pixel format.");
+            }
         }
     }
-    fn get_sub_data(&self, start: usize, len: usize) -> Self::Data {
-        let mut ret = Self::Data::with_capacity(len);
-        for i in 0..len {
-            ret.push(self.pixels[i + start]);
+    fn gl_pixel_type(&self) -> GlImagePixelType {
+        use ColorType::*;
+        use GlImagePixelType::*;
+        match self.color() {
+            L8 | La8 | Rgb8 | Rgba8 | Bgr8 | Bgra8 => UnsignedByte,
+            L16 | La16 | Rgb16 | Rgba16 => UnsignedShort,
+            _ => {
+                char_panic!("Cannot find valid gl color pixel type from image pixel type.");
+            }
         }
-        ret
     }
-    fn len(&self) -> usize {
-        self.pixels.len()
+    fn pixel_byte_count(&self) -> usize {
+        self.color().bytes_per_pixel() as usize
+    }
+}
+
+pub struct GPUTexture {
+    pub tex: Texture2D,
+    pub size: (u32, u32),
+}
+impl DataBuffer for GPUTexture {
+    type Data = DynamicImage;
+    type IndexType = (u32, u32);
+    fn set_data(&mut self, data: &Self::Data) {
+        use DynamicImage::*;
+        self.size = (data.width(), data.height());
+        self.tex.bind();
+        self.tex.set_texture(
+            match data {
+                ImageLuma8(img) => img.as_raw().as_ptr() as *const u8,
+                ImageLumaA8(img) => img.as_raw().as_ptr() as *const u8,
+                ImageRgb8(img) => img.as_raw().as_ptr() as *const u8,
+                ImageRgba8(img) => img.as_raw().as_ptr() as *const u8,
+                ImageBgr8(img) => img.as_raw().as_ptr() as *const u8,
+                ImageBgra8(img) => img.as_raw().as_ptr() as *const u8,
+                ImageLuma16(img) => img.as_raw().as_ptr() as *const u8,
+                ImageLumaA16(img) => img.as_raw().as_ptr() as *const u8,
+                ImageRgb16(img) => img.as_raw().as_ptr() as *const u8,
+                ImageRgba16(img) => img.as_raw().as_ptr() as *const u8,
+            },
+            self.size.0,
+            self.size.1,
+            data.gl_image_fmt(),
+            data.gl_pixel_fmt(),
+            data.gl_pixel_type(),
+            0,
+            data.pixel_byte_count(),
+        );
+        self.tex.unbind();
+    }
+    fn sub_data(&mut self, _: Self::IndexType, _: Self::IndexType, _: &Self::Data) {
+        char_panic!("Cannot set data of GPU texture.");
+    }
+    fn get_sub_data(&self, _: Self::IndexType, _: Self::IndexType) -> Self::Data {
+        char_panic!("Cannot get data of GPU texture.");
+    }
+    fn get_data(&self) -> Self::Data {
+        self.get_sub_data((0, 0), (0, 0))
+    }
+    fn len(&self) -> Self::IndexType {
+        self.size
+    }
+}
+impl GPUBuffer for GPUTexture {
+    type CPUType = DynamicImage;
+    fn new(win: &mut Window) -> Self {
+        Self {
+            tex: Texture2D::new(win),
+            size: (0, 0),
+        }
     }
 }
 

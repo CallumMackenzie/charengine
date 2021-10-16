@@ -3,19 +3,22 @@ pub mod world;
 #[cfg(any(test, target_family = "wasm"))]
 mod tests {
     use charmath::linear::matrix::*;
-    use charmath::linear::vector::*;
+    // use charmath::linear::vector::*;
+    use charwin::cw_println;
     use charwin::data::*;
     use charwin::input::*;
     use charwin::platform::*;
     use charwin::state::*;
     use charwin::window::*;
+    use std::sync::{Arc, Mutex};
 
     #[cfg(target_family = "wasm")]
     use wasm_bindgen::prelude::*;
 
     pub struct App {
         shader: Option<GPUShader>,
-        tri_buffer: Option<TriGPUBuffer<VertexV>>,
+        tri_buffer: Option<TriGPUBuffer<VertexVT>>,
+        tex: Option<Arc<Mutex<GPUTexture>>>,
         rot: f32,
     }
     impl App {
@@ -23,6 +26,7 @@ mod tests {
             App {
                 shader: None,
                 tri_buffer: None,
+                tex: None,
                 rot: 1.0,
             }
         }
@@ -32,28 +36,33 @@ mod tests {
             win.set_clear_colour(0.2, 0.2, 0.2, 1.0);
             let vs = "#version 300 es
             precision highp float;
-            layout (location = 0) in vec3 aPos;
+            layout (location = 0) in vec3 vPos;
+			layout (location = 1) in vec2 vUV;
             uniform mat2 rot;
             uniform vec2 pos;
             uniform float aspect;
+			out vec2 uv;
             void main() {
-                vec2 trns = aPos.xy * rot * vec2(aspect, 1.0);
+                vec2 trns = vPos.xy * rot * vec2(aspect, 1.0);
                 gl_Position = vec4(trns.xy + pos, 0.0, 1.0);
+				uv = vUV;
             }
             ";
             let fs = "#version 300 es
             precision mediump float;
             out vec4 FragColor;
-            uniform vec4 col;
+			uniform sampler2D tex;
+			in vec2 uv;
             void main() {
-               FragColor = col;
+				FragColor = texture(tex, uv).rgba;
             }
             ";
             let cpu_tris = TriCPUBuffer::from_f32_array(&[
-                -0.5, -0.5, 0.0, -0.5, 0.5, 0.0, 0.5, 0.5, 0.0, -0.5, -0.5, 0.0, 0.5, 0.5, 0.0,
-                0.5, -0.5, 0.0,
+                -0.5, -0.5, 0.0, 0.0, 0.0, -0.5, 0.5, 0.0, 0.0, 1.0, 0.5, 0.5, 0.0, 1.0, 1.0, -0.5,
+                -0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 1.0, 1.0, 0.5, -0.5, 0.0, 1.0, 0.0,
             ]);
             self.tri_buffer = Some(cpu_tris.to_gpu_buffer(win));
+            self.tex = Some(win.load_tex_rgba_no_mip("./resource/wood.jpg"));
             self.shader = Some(GPUShader::from_sources(win, &vs, &fs));
             0
         }
@@ -68,29 +77,15 @@ mod tests {
             if eng.key_pressed(Key::Escape) {
                 win.close();
             }
-            if eng.key_pressed(Key::R) {
-                self.tri_buffer
-                    .as_mut()
-                    .unwrap()
-                    .sub_data(3, 2, &[-0.7, 0.7]);
-            }
-            if eng.key_pressed(Key::T) {
-                self.tri_buffer
-                    .as_mut()
-                    .unwrap()
-                    .sub_data(3, 2, &[-0.5, 0.5]);
-            }
             if let (Some(shader), Some(buff)) = (self.shader.as_ref(), self.tri_buffer.as_ref()) {
                 win.clear_colour();
                 shader.use_shader();
+                shader.set_int("tex", 0);
                 shader.set_mat2f("rot", &matrices::rotation_2d(self.rot));
                 shader.set_vec2f("pos", &eng.gl_mouse_vec());
                 shader.set_float("aspect", eng.win_aspect_y());
-                if eng.mouse_left_pressed() {
-                    shader.set_vec4f("col", &Vec4f32::new(1.0, 0.5, 0.5, 1.0));
-                } else {
-                    shader.set_vec4f("col", &Vec4f32::new(1.0, 1.0, 1.0, 1.0));
-                }
+                let tex = self.tex.as_ref().unwrap().lock().unwrap();
+                tex.tex.bind();
                 buff.vao.bind();
                 shader.draw(buff.n_tris());
             }
@@ -102,7 +97,7 @@ mod tests {
             0
         }
         fn destroy(&mut self, win: &mut Window, _manager: &mut dyn EventManager, exit_code: i32) {
-            dbg_log(&format!("App exiting with code {}.", exit_code));
+            cw_println!("App exiting with code {}.", exit_code);
             win.clear_colour();
         }
     }

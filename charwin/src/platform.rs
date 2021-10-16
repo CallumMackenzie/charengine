@@ -10,8 +10,8 @@ pub type Buffer = crate::window::opengl_window::NativeGlBuffer;
 pub type VertexArray = crate::window::opengl_window::NativeGlVertexArray;
 #[cfg(not(target_family = "wasm"))]
 pub type Program = crate::window::opengl_window::NativeGlProgram;
-// #[cfg(not(target_family = "wasm"))]
-// pub type Texture = crate::window::opengl_window::NativeGlTexture;
+#[cfg(not(target_family = "wasm"))]
+pub type Texture2D = crate::window::opengl_window::NativeGlTexture2D;
 
 #[cfg(target_family = "wasm")]
 pub type Window = crate::window::webgl_window::WebGlWindow;
@@ -25,8 +25,8 @@ pub type Buffer = crate::window::webgl_window::WebGlBuffer;
 pub type VertexArray = crate::window::webgl_window::WebGlVertexArray;
 #[cfg(target_family = "wasm")]
 pub type Program = crate::window::webgl_window::WebGlProgram;
-// #[cfg(target_family = "wasm")]
-// pub type Texture = crate::window::webgl_window::WebGlTexture;
+#[cfg(target_family = "wasm")]
+pub type Texture2D = crate::window::webgl_window::WebGlTexture2D;
 
 #[cfg(target_family = "wasm")]
 use wasm_bindgen::prelude::*;
@@ -35,12 +35,11 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = console, js_name = log)]
-    fn js_log_string(a: &str);
+    pub fn js_log_string(a: &str);
     #[wasm_bindgen(js_namespace = console, js_name = error)]
-    fn js_err_string(a: &str);
+    pub fn js_err_string(a: &str);
 }
 
-/// Platform-agnostic logging.
 #[cfg(target_family = "wasm")]
 pub fn dbg_log(s: &str) {
     js_log_string(s);
@@ -48,11 +47,6 @@ pub fn dbg_log(s: &str) {
 #[cfg(not(target_family = "wasm"))]
 pub fn dbg_log(s: &str) {
     println!("{}", s);
-}
-
-#[cfg(target_family = "wasm")]
-pub fn char_panic_err(s: &str) {
-    js_err_string(s);
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -66,7 +60,30 @@ macro_rules! char_panic {
 #[macro_export]
 macro_rules! char_panic {
     ($($arg : tt) *) => {
-        crate::platform::char_panic_err(&format!($($arg)*));
+        crate::platform::js_err_string(&format!($($arg)*));
         panic!();
+    };
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[macro_export]
+macro_rules! cw_panic {
+    ($($arg : tt) *) => {
+        panic!($($arg)*);
+    };
+}
+#[cfg(target_family = "wasm")]
+#[macro_export]
+macro_rules! cw_panic {
+    ($($arg : tt) *) => {
+        charwin::platform::js_err_string(&format!($($arg)*));
+        panic!();
+    };
+}
+
+#[macro_export]
+macro_rules! cw_println {
+    ($($arg : tt) *) => {
+		charwin::platform::dbg_log(&format!($($arg)*));
     };
 }

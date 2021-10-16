@@ -1,9 +1,11 @@
 use crate::char_panic;
+use crate::data::{CPUBuffer, DynamicImageColorable, GPUTexture};
 use crate::input::{Key, MouseButton};
 use crate::platform::{Context, Window};
 use crate::state::State;
 use crate::window::*;
-use js_sys::Float32Array;
+use image::DynamicImage;
+use js_sys::{Float32Array, Uint8Array};
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::mem::size_of;
@@ -12,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
-    Event, HtmlCanvasElement, KeyboardEvent, MouseEvent, WebGl2RenderingContext,
+    Event, HtmlCanvasElement, HtmlImageElement, KeyboardEvent, MouseEvent, WebGl2RenderingContext,
     WebGlBuffer as JsSysWebGlBuffer, WebGlProgram as JsSysWebGlProgram,
     WebGlShader as JsSysWebGlShader, WebGlTexture as JsSysWebGlTexture,
     WebGlUniformLocation as JsSysWebGlUniformLocation,
@@ -25,6 +27,8 @@ extern "C" {
     fn js_log_string(a: &str);
     #[wasm_bindgen(js_namespace = console, js_name = warn)]
     fn js_warn_string(a: &str);
+    #[wasm_bindgen(js_namespace = console, js_name = error)]
+    fn js_err_string(a: &str);
 
     fn alert(a: &str);
 }
@@ -195,6 +199,55 @@ impl AbstractWindow for WebGlWindow {
     fn get_pos(&self) -> (i32, i32) {
         let bounding_rect = self.canvas.lock().unwrap().get_bounding_client_rect();
         (bounding_rect.x() as i32, bounding_rect.y() as i32)
+    }
+    fn load_texture_rgba(&mut self, path: &str, mips: u32) -> Arc<Mutex<GPUTexture>> {
+        let tex = Arc::new(Mutex::new(
+            DynamicImage::solid_color([0xff, 0x80, 0xff, 0xff]).to_gpu_buffer(self),
+        ));
+        let image = Arc::new(Mutex::new(HtmlImageElement::new().unwrap_or_else(|e| {
+            char_panic!("Could not create new HtmlImageElement: {:?}.", e);
+        })));
+        image.lock().unwrap().set_cross_origin(Some("anonymous"));
+        let f = Rc::new(RefCell::new(None));
+        let g: Rc<RefCell<Option<Closure<_>>>> = f.clone();
+        let tex_arc = Arc::clone(&tex);
+        let image_arc = Arc::clone(&image);
+        let context_arc = self.get_context_arc();
+        *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+            if let Ok(mut tex) = tex_arc.lock() {
+                if let Ok(image) = image_arc.lock() {
+                    tex.size = (image.width(), image.height());
+                    tex.tex.bind();
+                    context_arc
+                        .lock()
+                        .unwrap()
+                        .tex_image_2d_with_u32_and_u32_and_html_image_element(
+                            WebGl2RenderingContext::TEXTURE_2D,
+                            mips as i32,
+                            WebGl2RenderingContext::RGBA as i32,
+                            WebGl2RenderingContext::RGBA,
+                            WebGl2RenderingContext::UNSIGNED_BYTE,
+                            &image,
+                        )
+                        .unwrap_or_else(|e| {
+                            js_err_string(&format!("WebGL: Could not texture image: {:?}", e));
+                        });
+                    tex.tex.set_params();
+                    tex.tex.unbind();
+                } else {
+                    js_err_string(&"Loading image element mutex poisoned.");
+                }
+            } else {
+                js_err_string(&"Loading texture mutex poisoned.");
+            }
+            let _ = f.borrow_mut().take();
+        }) as Box<dyn FnMut()>));
+        image
+            .lock()
+            .unwrap()
+            .set_onload(Some(g.borrow().as_ref().unwrap().as_ref().unchecked_ref()));
+        image.lock().unwrap().set_src(path);
+        tex
     }
 }
 
@@ -683,7 +736,7 @@ impl WebGlContext {
             StencilTest => WebGl2RenderingContext::STENCIL_TEST,
             TextureCubeMap => WebGl2RenderingContext::TEXTURE_CUBE_MAP,
             _ => {
-                char_panic!("WebGL: GlFeature {:?} not supported for wasm.", f);
+                char_panic!("WebGL: GlFeature {:?} not supported on web.", f);
             }
         }
     }
@@ -1149,7 +1202,7 @@ pub struct WebGlTexture2D {
     slot: u32,
 }
 impl WebGlTexture2D {
-    fn gl_texture_type(t: &GlTextureType) -> u32 {
+    pub fn gl_texture_type(t: &GlTextureType) -> u32 {
         use GlTextureType::*;
         match t {
             Texture2D => WebGl2RenderingContext::TEXTURE_2D,
@@ -1164,9 +1217,50 @@ impl WebGlTexture2D {
             }
         }
     }
-    fn gl_internal_fmt(f: &GlInternalTextureFormat) -> i32 {
+    pub fn gl_internal_fmt(f: &GlInternalTextureFormat) -> u32 {
         use GlInternalTextureFormat::*;
         match f {
+            Red => WebGl2RenderingContext::RED,
+            RG => WebGl2RenderingContext::RG,
+            RGB => WebGl2RenderingContext::RGB,
+            RGBA => WebGl2RenderingContext::RGBA,
+            R8 => WebGl2RenderingContext::R8,
+            R8SNorm => WebGl2RenderingContext::R8_SNORM,
+            RG8 => WebGl2RenderingContext::RG8,
+            RG8SNorm => WebGl2RenderingContext::RG8_SNORM,
+            RGB8 => WebGl2RenderingContext::RGB8,
+            RGB8SNorm => WebGl2RenderingContext::RGB8_SNORM,
+            RGBA4 => WebGl2RenderingContext::RGBA4,
+            RGB5A1 => WebGl2RenderingContext::RGB5_A1,
+            RGBA8 => WebGl2RenderingContext::RGBA8,
+            RGBA8SNorm => WebGl2RenderingContext::RGBA8_SNORM,
+            RGB10A2 => WebGl2RenderingContext::RGB10_A2,
+            RGB10A2UI => WebGl2RenderingContext::RGB10_A2UI,
+            SRGB8 => WebGl2RenderingContext::SRGB8,
+            SRGB8Alpha8 => WebGl2RenderingContext::SRGB8_ALPHA8,
+            R16F => WebGl2RenderingContext::R16F,
+            RG16F => WebGl2RenderingContext::RG16F,
+            RGBA16F => WebGl2RenderingContext::RGBA16F,
+            R32F => WebGl2RenderingContext::R32F,
+            RG32F => WebGl2RenderingContext::RG32F,
+            RGBA32F => WebGl2RenderingContext::RGBA32F,
+            R11FG11FB10F => WebGl2RenderingContext::R11F_G11F_B10F,
+            RGB9E5 => WebGl2RenderingContext::RGB9_E5,
+            R8I => WebGl2RenderingContext::R8I,
+            R8UI => WebGl2RenderingContext::R8UI,
+            R16I => WebGl2RenderingContext::R16I,
+            R16UI => WebGl2RenderingContext::R16UI,
+            R32I => WebGl2RenderingContext::R32I,
+            R32UI => WebGl2RenderingContext::R32UI,
+            RG8I => WebGl2RenderingContext::RG8I,
+            RG8UI => WebGl2RenderingContext::RG8UI,
+            RG16I => WebGl2RenderingContext::RG16I,
+            RG16UI => WebGl2RenderingContext::RG16UI,
+            RG32I => WebGl2RenderingContext::RG32I,
+            RG32UI => WebGl2RenderingContext::RG32UI,
+            RGBA8I => WebGl2RenderingContext::RGBA8I,
+            RGBA16I => WebGl2RenderingContext::RGBA16I,
+            RGBA32I => WebGl2RenderingContext::RGBA32I,
             _ => {
                 char_panic!(
                     "WebGL: GlInternalTextureFormat {:?} not supported on web.",
@@ -1175,21 +1269,59 @@ impl WebGlTexture2D {
             }
         }
     }
-    fn gl_img_fmt(f: &GlImagePixelFormat) -> u32 {
+    pub fn gl_img_fmt(f: &GlImagePixelFormat) -> u32 {
         use GlImagePixelFormat::*;
         match f {
+            Red => WebGl2RenderingContext::RED,
+            RG => WebGl2RenderingContext::RG,
+            RGB => WebGl2RenderingContext::RGB,
+            RGBA => WebGl2RenderingContext::RGBA,
+            RedInt => WebGl2RenderingContext::RED_INTEGER,
+            RGInt => WebGl2RenderingContext::RG_INTEGER,
+            RGBInt => WebGl2RenderingContext::RGB_INTEGER,
+            RGBAInt => WebGl2RenderingContext::RGBA_INTEGER,
+            DepthComponent => WebGl2RenderingContext::DEPTH_COMPONENT,
+            DepthStencil => WebGl2RenderingContext::DEPTH_STENCIL,
             _ => {
                 char_panic!("WebGL: GlImagePixelFormat {:?} not supported on web.", f);
             }
         }
     }
-    fn gl_px_fmt(f: &GlImagePixelType) -> u32 {
+    pub fn gl_px_fmt(f: &GlImagePixelType) -> u32 {
         use GlImagePixelType::*;
         match f {
-            _ => {
-                char_panic!("WebGL: GlImagePixelType {:?} not supported on web.", f);
-            }
+            UnsignedByte => WebGl2RenderingContext::UNSIGNED_BYTE,
+            Byte => WebGl2RenderingContext::BYTE,
+            UnsignedShort => WebGl2RenderingContext::UNSIGNED_SHORT,
+            Short => WebGl2RenderingContext::SHORT,
+            UnsignedInt => WebGl2RenderingContext::UNSIGNED_INT,
+            Int => WebGl2RenderingContext::INT,
+            HalfFloat => WebGl2RenderingContext::HALF_FLOAT,
+            Float => WebGl2RenderingContext::FLOAT,
         }
+    }
+    pub fn set_params(&self) {
+        let gl = self.context.lock().unwrap();
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_WRAP_S,
+            WebGl2RenderingContext::REPEAT as i32,
+        );
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_WRAP_T,
+            WebGl2RenderingContext::REPEAT as i32,
+        );
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+            WebGl2RenderingContext::LINEAR as i32,
+        );
+        gl.tex_parameteri(
+            WebGl2RenderingContext::TEXTURE_2D,
+            WebGl2RenderingContext::TEXTURE_MAG_FILTER,
+            WebGl2RenderingContext::LINEAR as i32,
+        );
     }
 }
 impl GlBindable for WebGlTexture2D {
@@ -1218,28 +1350,38 @@ impl GlTexture2D for WebGlTexture2D {
     }
     fn set_texture(
         &self,
-        tex: *const u8,
+        tex_ptr: *const u8,
         width: u32,
         height: u32,
         internal_fmt: GlInternalTextureFormat,
         img_fmt: GlImagePixelFormat,
         px_type: GlImagePixelType,
         mipmaps: u32,
+        px_byte_size: usize,
     ) {
-        let gl = self.context.lock().unwrap();
-        gl.tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_opt_u8_array(
-            WebGl2RenderingContext::TEXTURE_2D,
-            mipmaps as i32,
-            Self::gl_internal_fmt(&internal_fmt),
-            width as i32,
-            height as i32,
-            0,
-            Self::gl_img_fmt(&img_fmt),
-            Self::gl_px_fmt(&px_type),
-            // Some(tex as &[u8]),
-            None,
-        );
-        self.unbind();
+        unsafe {
+            let array_buff_view = Uint8Array::view_mut_raw(
+                tex_ptr as *mut u8,
+                (width * height) as usize * px_byte_size,
+            );
+            self.set_params();
+            self.context.lock().unwrap()
+                .tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_array_buffer_view_and_src_offset(
+                    WebGl2RenderingContext::TEXTURE_2D,
+                    mipmaps as i32,
+                    Self::gl_internal_fmt(&internal_fmt) as i32,
+                    width as i32,
+                    height as i32,
+                    0,
+                    Self::gl_img_fmt(&img_fmt),
+                    Self::gl_px_fmt(&px_type),
+					&array_buff_view,
+					0,
+                )
+                .unwrap_or_else(|err| {
+                    char_panic!("WebGL: Error calling texImage2D: {:?}.", err);
+                });
+        }
     }
     fn set_slot(&mut self, slot: u32) {
         self.slot = WebGl2RenderingContext::TEXTURE0 + slot;
