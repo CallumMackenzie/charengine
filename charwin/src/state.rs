@@ -11,15 +11,15 @@ pub trait State: 'static {
 #[derive(Debug)]
 pub struct FrameManager {
     delta: f64,
-    target_delta_micro: u128,
+    target_delta_micro: Option<u128>,
     last_frame_micro: u128,
 }
 #[cfg(not(target_family = "wasm"))]
 impl FrameManager {
-    pub fn new(fps: f64) -> FrameManager {
+    pub fn new(fps: Option<f64>) -> FrameManager {
         let mut ret = FrameManager {
             delta: 0f64,
-            target_delta_micro: 500u128,
+            target_delta_micro: None,
             last_frame_micro: Self::current_time_micro(),
         };
         ret.set_fps(fps);
@@ -32,16 +32,26 @@ impl FrameManager {
             .as_micros() as u128
     }
     pub fn next_frame_ready(&mut self) -> bool {
-        if Self::current_time_micro() - self.last_frame_micro >= self.target_delta_micro {
-            self.delta = (Self::current_time_micro() - self.last_frame_micro) as f64 / 1000000f64;
-            self.last_frame_micro = Self::current_time_micro();
-            true
-        } else {
-            false
-        }
+		if let Some(target_delta_mcs) = self.target_delta_micro {
+			if Self::current_time_micro() - self.last_frame_micro >= target_delta_mcs {
+				self.delta = (Self::current_time_micro() - self.last_frame_micro) as f64 / 1000000f64;
+				self.last_frame_micro = Self::current_time_micro();
+				true
+			} else {
+				false
+			}
+		} else {
+			self.delta = (Self::current_time_micro() - self.last_frame_micro) as f64 / 1000000f64;
+			self.last_frame_micro = Self::current_time_micro();
+			true
+		}
     }
-    pub fn set_fps(&mut self, fps: f64) {
-        self.target_delta_micro = ((1f64 / fps) * 1000f64) as u128 * 1000u128;
+    pub fn set_fps(&mut self, fps: Option<f64>) {
+		if let Some(fps) = fps {
+        	self.target_delta_micro = Some(((1f64 / fps) * 1000f64) as u128 * 1000u128);
+		} else {
+			self.target_delta_micro = None;
+		}
     }
     pub fn get_delta(&self) -> f64 {
         self.delta

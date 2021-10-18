@@ -352,11 +352,8 @@ pub trait AbstractWindow {
     fn get_size(&self) -> (i32, i32);
     fn get_pos(&self) -> (i32, i32);
     fn get_gl_context(&mut self) -> Context;
-    fn load_texture_rgba(&mut self, path: &str, mips: u32) -> Arc<Mutex<GPUTexture>>;
+    fn load_texture_rgba(&mut self, path: &str, mips: Option<u32>) -> Arc<Mutex<GPUTexture>>;
 
-    fn load_tex_rgba_no_mip(&mut self, path: &str) -> Arc<Mutex<GPUTexture>> {
-        self.load_texture_rgba(path, 0)
-    }
     fn clear_colour(&mut self) {
         self.clear(&[GlClearMask::Color]);
     }
@@ -671,6 +668,7 @@ pub trait GlShader: Sized + Drop {
 }
 pub trait GlTexture2D: GlBindable {
     fn new(w: &mut Window) -> Self;
+	/// For mipmap levels, None means use default levels, Some(x) means generate x mipmap levels.
     fn set_texture(
         &self,
         tex: *const u8,
@@ -679,7 +677,7 @@ pub trait GlTexture2D: GlBindable {
         internal_fmt: GlInternalTextureFormat,
         img_fmt: GlImagePixelFormat,
         px_type: GlImagePixelType,
-        mipmaps: u32,
+        mipmaps: Option<u32>,
         pixel_byte_size: usize,
     );
     fn set_slot(&mut self, slot: u32);
@@ -693,6 +691,7 @@ pub trait GlContext: Sized {
     fn enable(&mut self, feature: GlFeature);
     fn disable(&mut self, feature: GlFeature);
     fn get_enabled_features(&self) -> Vec<GlFeature>;
+	fn default_depth_func(&self);
 
     fn enable_features(&mut self, features: &[GlFeature]) {
         for i in 0..features.len() {

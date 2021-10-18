@@ -5,7 +5,7 @@ use glfw::{
 use std::ffi::CString;
 use std::ptr;
 extern crate gl;
-use crate::data::{CPUBuffer, DataBuffer, DynamicImageColorable, GPUTexture};
+use crate::data::{CPUBuffer, DynamicImageColorable, GPUTexture};
 use crate::input::{Key, MouseButton};
 use crate::platform::{Context, Window};
 use crate::state::{FrameManager, State};
@@ -30,6 +30,7 @@ pub struct NativeGlWindow {
             Arc<Mutex<GPUTexture>>,
             JoinHandle<DynamicImage>,
             Receiver<()>,
+			Option<u32>,
         ),
     >,
     image_thread_count: u32,
@@ -46,7 +47,7 @@ impl NativeGlWindow {
             init_events.push(WindowEvent::Position(pos.0, pos.1));
             manager.process_events(&init_events);
         }
-        let mut fm = FrameManager::new(60f64);
+        let mut fm = FrameManager::new(None);
         let mut state_res = state.initialize(&mut self, &mut manager);
         self.get_gl_errors();
         if state_res == 0 {
@@ -105,36 +106,37 @@ impl NativeGlWindow {
             }
         }
     }
-	fn poll_image_threads(&mut self) {
-        let mut completed_threads = Vec::<(bool, u32)>::with_capacity(self.image_load_threads.len());
+    fn poll_image_threads(&mut self) {
+        let mut completed_threads =
+            Vec::<(bool, u32)>::with_capacity(self.image_load_threads.len());
         for (index, thread) in self.image_load_threads.iter() {
             match thread.2.try_recv() {
                 Ok(_) => {
-					completed_threads.push((true, *index));
-				}
+                    completed_threads.push((true, *index));
+                }
                 Err(TryRecvError::Disconnected) => {
                     eprintln!("Image thread {} disconnected.", index);
                     completed_threads.push((false, *index));
                 }
-				_ => {}
+                _ => {}
             }
         }
         for (success, index) in completed_threads {
             if success {
-                let (tex, thread, _) = self.image_load_threads.remove(&index).unwrap();
+                let (tex, thread, _, mips) = self.image_load_threads.remove(&index).unwrap();
                 match thread.join() {
                     Ok(data) => {
-                        tex.lock().unwrap().set_data(&data);
+                        tex.lock().unwrap().set_data_mips(&data, mips);
                     }
                     Err(e) => {
-						eprintln!("Image thread {} error: {:?}", index, e);
-					}
+                        eprintln!("Image thread {} error: {:?}", index, e);
+                    }
                 }
             } else {
                 self.image_load_threads.remove(&index);
             }
         }
-	}
+    }
 }
 
 impl AbstractWindow for NativeGlWindow {
@@ -164,7 +166,7 @@ impl AbstractWindow for NativeGlWindow {
                 self.events.push(event);
             }
         }
-		self.poll_image_threads();
+        self.poll_image_threads();
     }
     fn get_events(&mut self) -> Vec<WindowEvent> {
         let mut events = Vec::new();
@@ -185,7 +187,7 @@ impl AbstractWindow for NativeGlWindow {
     fn get_pos(&self) -> (i32, i32) {
         self.window.get_pos()
     }
-    fn load_texture_rgba(&mut self, path: &str, _mips: u32) -> Arc<Mutex<GPUTexture>> {
+    fn load_texture_rgba(&mut self, path: &str, mips: Option<u32>) -> Arc<Mutex<GPUTexture>> {
         let tex = Arc::new(Mutex::new(
             DynamicImage::solid_color([0xff, 0x80, 0xff, 0xff]).to_gpu_buffer(self),
         ));
@@ -207,7 +209,7 @@ impl AbstractWindow for NativeGlWindow {
         });
         self.image_load_threads.insert(
             self.image_thread_count,
-            (Arc::clone(&tex), handle, reciever),
+            (Arc::clone(&tex), handle, reciever, mips),
         );
         self.image_thread_count += 1;
         tex
@@ -363,6 +365,11 @@ impl GlContext for NativeGlContext {
     }
     fn get_enabled_features(&self) -> Vec<GlFeature> {
         self.features.iter().map(|x| *x).collect()
+    }
+    fn default_depth_func(&self) {
+        unsafe {
+            gl::DepthFunc(gl::LEQUAL);
+        }
     }
 }
 
@@ -856,12 +863,17 @@ impl NativeGlTexture2D {
             Float => gl::FLOAT,
         }
     }
-    pub fn set_params(&self) {
+    pub fn set_params(&self, mips: Option<u32>) {
         unsafe {
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
-            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
+			if mips == Some(0) {
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+			} else {
+				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR as i32);
+				gl::GenerateMipmap(gl::TEXTURE_2D);
+			}
         }
     }
 }
@@ -898,14 +910,21 @@ impl GlTexture2D for NativeGlTexture2D {
         internal_fmt: GlInternalTextureFormat,
         img_fmt: GlImagePixelFormat,
         px_type: GlImagePixelType,
-        mipmaps: u32,
+        mipmaps: Option<u32>,
         _px_byte_size: usize,
     ) {
         unsafe {
-            self.set_params();
+			let mips = if u32::is_power_of_two(width) && u32::is_power_of_two(height) {
+				mipmaps
+			} else {
+				if mipmaps != None {
+					eprintln!("Image improper size ({}x{}) to support specific mipmap level {}.", width, height, mipmaps.unwrap());
+				}
+				None
+			};
             gl::TexImage2D(
                 gl::TEXTURE_2D,
-                mipmaps as i32,
+                mips.unwrap_or_else(|| 0) as i32,
                 Self::gl_internal_fmt(&internal_fmt) as i32,
                 width as i32,
                 height as i32,
@@ -914,6 +933,7 @@ impl GlTexture2D for NativeGlTexture2D {
                 Self::gl_px_fmt(&px_type),
                 tex_ptr as *const GLvoid,
             );
+            self.set_params(mipmaps);
         }
     }
     fn set_slot(&mut self, slot: u32) {

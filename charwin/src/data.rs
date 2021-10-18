@@ -638,10 +638,8 @@ pub struct GPUTexture {
     pub tex: Texture2D,
     pub size: (u32, u32),
 }
-impl DataBuffer for GPUTexture {
-    type Data = DynamicImage;
-    type IndexType = (u32, u32);
-    fn set_data(&mut self, data: &Self::Data) {
+impl GPUTexture {
+	pub fn set_data_mips(&mut self, data: &DynamicImage, mips: Option<u32>) {
         use DynamicImage::*;
         self.size = (data.width(), data.height());
         self.tex.bind();
@@ -663,10 +661,17 @@ impl DataBuffer for GPUTexture {
             data.gl_image_fmt(),
             data.gl_pixel_fmt(),
             data.gl_pixel_type(),
-            0,
+            mips,
             data.pixel_byte_count(),
         );
         self.tex.unbind();
+	}
+}
+impl DataBuffer for GPUTexture {
+    type Data = DynamicImage;
+    type IndexType = (u32, u32);
+    fn set_data(&mut self, data: &Self::Data) {
+		self.set_data_mips(data, None);
     }
     fn sub_data(&mut self, _: Self::IndexType, _: Self::IndexType, _: &Self::Data) {
         char_panic!("Cannot set data of GPU texture.");

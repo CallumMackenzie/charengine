@@ -420,7 +420,12 @@ pub trait Vector<NUM: Copy + Algebraic<NUM, NUM> + CharMathNumeric<NUM>, VEC: Ve
         vector_utils::array_dot::<NUM>(self.get_internal_array(), other.get_internal_array())
     }
     fn normalized(&self) -> VEC {
-        self.div_num(self.len())
+		let len = self.len();
+		if len != NUM::zero() {
+			self.div_num(len)
+		} else {
+			self.cm_copy()
+		}
     }
     fn normalize(&mut self) -> &Self {
         self.set(&self.normalized())

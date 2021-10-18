@@ -112,7 +112,8 @@ pub trait Matrix<N: CharMathNumeric<N>, MAT: Matrix<N, MAT>>:
     fn mul_col_vec<T: VectorBase<N> + CharMathCopy<T>>(&self, vb: &T) -> T {
         assert!(
             self.get_width() == vb.n_elems(),
-            "Vector size incompatible with matrix."
+            "Vector size ({:?}) incompatible with matrix size ({}).", 
+			vb.n_elems(), self.get_width()
         );
         let mut ret = vb.cm_copy();
         for i in 0..self.get_height() {
@@ -351,7 +352,19 @@ impl<N: CharMathNumeric<N>> Matrix<N, Self> for Mat4<N> {
         Mat4::<N> { mat: internal_vec }
     }
 }
-impl<N: CharMathNumeric<N>> SquareMatrix<N, Mat4<N>> for Mat4<N> {}
+impl<N: CharMathNumeric<N>> SquareMatrix<N, Mat4<N>> for Mat4<N> {
+	fn inverse(&self) -> Self {
+        let mut matrix = Self::from_flat(&[], 4, 4);
+        matrix.mat[0][0] = self.mat[0][0]; matrix.mat[0][1] = self.mat[1][0]; matrix.mat[0][2] = self.mat[2][0]; matrix.mat[0][3] = N::zero();
+        matrix.mat[1][0] = self.mat[0][1]; matrix.mat[1][1] = self.mat[1][1]; matrix.mat[1][2] = self.mat[2][1]; matrix.mat[1][3] = N::zero();
+        matrix.mat[2][0] = self.mat[0][2]; matrix.mat[2][1] = self.mat[1][2]; matrix.mat[2][2] = self.mat[2][2]; matrix.mat[2][3] = N::zero();
+        matrix.mat[3][0] = N::neg(self.mat[3][0] * matrix.mat[0][0] + self.mat[3][1] * matrix.mat[1][0] + self.mat[3][2] * matrix.mat[2][0]);
+        matrix.mat[3][1] = N::neg(self.mat[3][0] * matrix.mat[0][1] + self.mat[3][1] * matrix.mat[1][1] + self.mat[3][2] * matrix.mat[2][1]);
+        matrix.mat[3][2] = N::neg(self.mat[3][0] * matrix.mat[0][2] + self.mat[3][1] * matrix.mat[1][2] + self.mat[3][2] * matrix.mat[2][2]);
+        matrix.mat[3][3] = N::one();
+        matrix
+	}
+}
 
 #[derive(Debug)]
 #[repr(C)]
@@ -498,20 +511,20 @@ pub mod matrices {
         rot_z[1][1] = N::cos(z);
         rot_z[0][1] = N::sin(z);
         rot_z[1][0] = N::neg(N::sin(z));
-        Mat4::<N>::from_matrix(&rot_x.mul_mat(&rot_y).mul_mat(&rot_z))
+        Mat4::<N>::from_matrix(&rot_z.mul_mat(&rot_y).mul_mat(&rot_x))
     }
     pub fn rotation_euler<N: CharMathNumeric<N>, V: VectorBase<N>>(v: &V) -> Mat4<N> {
         rotation_euler_num::<N>(v.get_value(0), v.get_value(1), v.get_value(2))
     }
     pub fn perspective<N: CharMathNumeric<N>>(fov: N, aspect: N, near: N, far: N) -> Mat4<N> {
-        let mut ret = Mat4::<N>::from_flat(&[], 4, 4);
+        let mut ret = Mat4::from_flat(&[], 4, 4);
         let fov_rad = N::one() / N::tan(N::to_radians(fov * N::half()));
         ret[0][0] = aspect * fov_rad;
         ret[1][1] = fov_rad;
         ret[2][2] = far / (far - near);
-        ret[3][3] = N::zero();
+        ret[3][2] = (N::neg(far) * near) / (far - near);
         ret[2][3] = N::one();
-        ret[3][2] = (far * near * N::neg(N::one())) / (far - near);
+        ret[3][3] = N::zero();
         ret
     }
     pub fn look_at_3d<N: CharMathNumeric<N>, V: Vec3<N, V>>(

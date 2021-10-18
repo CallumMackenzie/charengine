@@ -1,6 +1,6 @@
 use crate::{Algebraic, AlgebraicAssignable};
 
-pub trait CharMathNumeric<NUM>: Algebraic<NUM, NUM> + AlgebraicAssignable<NUM> + Copy {
+pub trait CharMathNumeric<NUM>: Algebraic<NUM, NUM> + AlgebraicAssignable<NUM> + Copy + std::fmt::Debug + std::cmp::PartialEq {
     fn sqrt(a: NUM) -> NUM;
     fn zero() -> NUM;
     fn half() -> NUM;

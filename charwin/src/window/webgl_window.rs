@@ -200,7 +200,7 @@ impl AbstractWindow for WebGlWindow {
         let bounding_rect = self.canvas.lock().unwrap().get_bounding_client_rect();
         (bounding_rect.x() as i32, bounding_rect.y() as i32)
     }
-    fn load_texture_rgba(&mut self, path: &str, mips: u32) -> Arc<Mutex<GPUTexture>> {
+    fn load_texture_rgba(&mut self, path: &str, mipmaps: Option<u32>) -> Arc<Mutex<GPUTexture>> {
         let tex = Arc::new(Mutex::new(
             DynamicImage::solid_color([0xff, 0x80, 0xff, 0xff]).to_gpu_buffer(self),
         ));
@@ -213,17 +213,26 @@ impl AbstractWindow for WebGlWindow {
         let tex_arc = Arc::clone(&tex);
         let image_arc = Arc::clone(&image);
         let context_arc = self.get_context_arc();
+		let path_string = path.to_string();
         *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
             if let Ok(mut tex) = tex_arc.lock() {
                 if let Ok(image) = image_arc.lock() {
                     tex.size = (image.width(), image.height());
                     tex.tex.bind();
+					let mips = if u32::is_power_of_two(image.width()) && u32::is_power_of_two(image.height()) {
+						mipmaps
+					} else {
+						if mipmaps != None {
+							js_warn_string(&format!("Image ({}) improper size ({}x{}) to support specific mipmap level {}.", path_string, image.width(), image.height(), mipmaps.unwrap()));
+						}
+						None
+					};
                     context_arc
                         .lock()
                         .unwrap()
                         .tex_image_2d_with_u32_and_u32_and_html_image_element(
                             WebGl2RenderingContext::TEXTURE_2D,
-                            mips as i32,
+                            mips.unwrap_or_else(|| 0) as i32,
                             WebGl2RenderingContext::RGBA as i32,
                             WebGl2RenderingContext::RGBA,
                             WebGl2RenderingContext::UNSIGNED_BYTE,
@@ -232,7 +241,7 @@ impl AbstractWindow for WebGlWindow {
                         .unwrap_or_else(|e| {
                             js_err_string(&format!("WebGL: Could not texture image: {:?}", e));
                         });
-                    tex.tex.set_params();
+					tex.tex.set_params(mips);
                     tex.tex.unbind();
                 } else {
                     js_err_string(&"Loading image element mutex poisoned.");
@@ -306,6 +315,7 @@ impl WebGlWindow {
                     state.initialize(&mut self, &mut manager);
                     state_initialized = true;
                 } else {
+                    self.poll_events();
                     manager.process_events(&self.get_events());
                 }
                 let update_res = state.update(
@@ -787,6 +797,12 @@ impl GlContext for WebGlContext {
     }
     fn get_enabled_features(&self) -> Vec<GlFeature> {
         self.features.iter().map(|x| *x).collect()
+    }
+    fn default_depth_func(&self) {
+        self.context
+            .lock()
+            .unwrap()
+            .depth_func(WebGl2RenderingContext::LEQUAL);
     }
 }
 
@@ -1300,7 +1316,7 @@ impl WebGlTexture2D {
             Float => WebGl2RenderingContext::FLOAT,
         }
     }
-    pub fn set_params(&self) {
+    pub fn set_params(&self, mips: Option<u32>) {
         let gl = self.context.lock().unwrap();
         gl.tex_parameteri(
             WebGl2RenderingContext::TEXTURE_2D,
@@ -1314,14 +1330,23 @@ impl WebGlTexture2D {
         );
         gl.tex_parameteri(
             WebGl2RenderingContext::TEXTURE_2D,
-            WebGl2RenderingContext::TEXTURE_MIN_FILTER,
-            WebGl2RenderingContext::LINEAR as i32,
-        );
-        gl.tex_parameteri(
-            WebGl2RenderingContext::TEXTURE_2D,
             WebGl2RenderingContext::TEXTURE_MAG_FILTER,
             WebGl2RenderingContext::LINEAR as i32,
         );
+        if mips == Some(0) {
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+                WebGl2RenderingContext::LINEAR as i32,
+            );
+        } else {
+            gl.tex_parameteri(
+                WebGl2RenderingContext::TEXTURE_2D,
+                WebGl2RenderingContext::TEXTURE_MIN_FILTER,
+                WebGl2RenderingContext::LINEAR_MIPMAP_LINEAR as i32,
+            );
+            gl.generate_mipmap(WebGl2RenderingContext::TEXTURE_2D);
+        }
     }
 }
 impl GlBindable for WebGlTexture2D {
@@ -1356,7 +1381,7 @@ impl GlTexture2D for WebGlTexture2D {
         internal_fmt: GlInternalTextureFormat,
         img_fmt: GlImagePixelFormat,
         px_type: GlImagePixelType,
-        mipmaps: u32,
+        mipmaps: Option<u32>,
         px_byte_size: usize,
     ) {
         unsafe {
@@ -1364,11 +1389,18 @@ impl GlTexture2D for WebGlTexture2D {
                 tex_ptr as *mut u8,
                 (width * height) as usize * px_byte_size,
             );
-            self.set_params();
+			let mips = if u32::is_power_of_two(width) && u32::is_power_of_two(height) {
+				mipmaps
+			} else {
+				if mipmaps != None {
+					js_warn_string(&format!("Image improper size ({}x{}) to support specific mipmap level {}.", width, height, mipmaps.unwrap()));
+				}
+				None
+			};
             self.context.lock().unwrap()
                 .tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_array_buffer_view_and_src_offset(
                     WebGl2RenderingContext::TEXTURE_2D,
-                    mipmaps as i32,
+                    mips.unwrap_or_else(|| 0) as i32,
                     Self::gl_internal_fmt(&internal_fmt) as i32,
                     width as i32,
                     height as i32,
@@ -1381,6 +1413,7 @@ impl GlTexture2D for WebGlTexture2D {
                 .unwrap_or_else(|err| {
                     char_panic!("WebGL: Error calling texImage2D: {:?}.", err);
                 });
+            self.set_params(mips);
         }
     }
     fn set_slot(&mut self, slot: u32) {
