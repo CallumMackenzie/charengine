@@ -32,26 +32,27 @@ impl FrameManager {
             .as_micros() as u128
     }
     pub fn next_frame_ready(&mut self) -> bool {
-		if let Some(target_delta_mcs) = self.target_delta_micro {
-			if Self::current_time_micro() - self.last_frame_micro >= target_delta_mcs {
-				self.delta = (Self::current_time_micro() - self.last_frame_micro) as f64 / 1000000f64;
-				self.last_frame_micro = Self::current_time_micro();
-				true
-			} else {
-				false
-			}
-		} else {
-			self.delta = (Self::current_time_micro() - self.last_frame_micro) as f64 / 1000000f64;
-			self.last_frame_micro = Self::current_time_micro();
-			true
-		}
+        if let Some(target_delta_mcs) = self.target_delta_micro {
+            if Self::current_time_micro() - self.last_frame_micro >= target_delta_mcs {
+                self.delta =
+                    (Self::current_time_micro() - self.last_frame_micro) as f64 / 1000000f64;
+                self.last_frame_micro = Self::current_time_micro();
+                true
+            } else {
+                false
+            }
+        } else {
+            self.delta = (Self::current_time_micro() - self.last_frame_micro) as f64 / 1000000f64;
+            self.last_frame_micro = Self::current_time_micro();
+            true
+        }
     }
     pub fn set_fps(&mut self, fps: Option<f64>) {
-		if let Some(fps) = fps {
-        	self.target_delta_micro = Some(((1f64 / fps) * 1000f64) as u128 * 1000u128);
-		} else {
-			self.target_delta_micro = None;
-		}
+        if let Some(fps) = fps {
+            self.target_delta_micro = Some(((1f64 / fps) * 1000f64) as u128 * 1000u128);
+        } else {
+            self.target_delta_micro = None;
+        }
     }
     pub fn get_delta(&self) -> f64 {
         self.delta

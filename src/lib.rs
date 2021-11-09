@@ -2,6 +2,7 @@ pub mod world;
 
 #[cfg(any(test, target_family = "wasm"))]
 mod tests {
+    use crate::world::*;
     use charmath::linear::matrix::*;
     use charmath::linear::vector::*;
     use charwin::cw_println;
@@ -10,21 +11,17 @@ mod tests {
     use charwin::platform::*;
     use charwin::state::*;
     use charwin::window::*;
-    use std::sync::{Arc, Mutex};
-	use crate::world::*;
 
     #[cfg(target_family = "wasm")]
     use wasm_bindgen::prelude::*;
 
-	pub struct AppData {
+    pub struct AppData {
         shader: GPUShader,
-		msh: Mesh3D<VertexVTN>,
-        tex: Arc<Mutex<GPUTexture>>,
-		rot: Vec3f32,
-		camera: PerspectiveCamera3D,
-	}
+        mshs: Vec<Object3D>,
+        camera: PerspectiveCamera3D,
+    }
     pub struct App {
-		data: Option<AppData>,
+        data: Option<AppData>,
     }
     impl State for App {
         fn initialize(&mut self, win: &mut Window, _manager: &mut dyn EventManager) -> i32 {
@@ -35,6 +32,7 @@ mod tests {
 			struct Camera {
 				mat4 projection;
 				mat4 view;
+				vec3 position;
 			};
 			struct Mesh {
 				mat4 transform;
@@ -60,65 +58,90 @@ mod tests {
             let fs = "#version 300 es
             precision mediump float;
             out vec4 FragColor;
-			uniform sampler2D tex;
+			
+			struct Material {
+				sampler2D diffuse;
+			};
+
+			uniform vec3 cameraPos;
+			uniform Material material;
 			in vec3 norm;
 			in vec2 uv;
+
+			vec3 getDiffuse(vec4 tex, vec3 lightDir, vec3 normal) {
+				float diffuseCoeff = max(dot(normal, lightDir), 0.0);
+				return tex.xyz * diffuseCoeff;
+			}
+
+			vec3 getAmbient(vec4 tex) {
+				return vec3(0.2, 0.2, 0.2);
+			}
+
+			vec3 getSpecular(vec4 tex, vec3 lightDir, vec3 normal) {
+				// TODO
+				return tex.xyz;
+			}
+
             void main() {
-				float diff = max(dot(norm, vec3(0.0, 1.0, 0.0)), 0.0);
-				vec4 ambient = vec4(0.2, 0.2, 0.2, 1.0) * texture(tex, uv).rgba;
-				vec4 diffuse = texture(tex, uv).rgba * diff;
-				FragColor = ambient + diffuse;
+				vec3 lightDir = vec3(0.0, 1.0, 0.0);
+				vec4 diffuseTexture = texture(material.diffuse, uv).rgba;
+
+				vec3 ambient = getAmbient(diffuseTexture);
+				vec3 diffuse = getDiffuse(diffuseTexture, lightDir, norm);
+				vec3 specular = getSpecular(diffuseTexture, lightDir, norm);
+				FragColor = vec4(ambient + diffuse, 1.0);
             }
             ";
-			self.data = Some(
-				AppData {
-					shader: GPUShader::from_sources(win, &vs, &fs),
-					tex: win.load_texture_rgba("./resource/wood.jpg", None),
-					msh: Mesh3D::from_data(win, 
-						&Mesh3D::<VertexVTN>::tris_from_obj_data(std::include_str!("../resource/torusnt.obj"))
-					),
-					rot: Vec3f32::new(0.0, 0.0, 0.0),
-					camera: PerspectiveCamera3D { 
-						fov: 75.0,
-						near: 0.1,
-						far: 100.0,
-						pos: Vec3f32::new(0.0, 0.0, 0.0),
-						rot: Vec3f32::new(0.0, 0.0, 0.0),
-					}
-				}
-			);
-			let mut context = win.get_gl_context();
-			context.enable(GlFeature::DepthTest);
-			context.default_depth_func();
+            self.data = Some(AppData {
+                shader: GPUShader::from_sources(win, &vs, &fs),
+                mshs: vec![
+                    Object3D::new(
+						win,
+                        std::include_str!("../resource/torusnt.obj"),
+                        "./resource/wood.jpg",
+                    ),
+                    // Object3D::new(
+					// 	win,
+                    //     std::include_str!("../resource/cubent.obj"),
+                    //     "./resource/dirt.jpg",
+                    // ),
+                ],
+                camera: PerspectiveCamera3D {
+                    fov: 75.0,
+                    near: 0.1,
+                    far: 100.0,
+                    pos: Vec3f32::new(0.0, 0.0, 0.0),
+                    rot: Vec3f32::new(0.0, 0.0, 0.0),
+                },
+            });
+            let mut context = win.get_gl_context();
+            context.enable(GlFeature::DepthTest);
+            context.default_depth_func();
             0
         }
         fn update(&mut self, win: &mut Window, eng: &mut dyn EventManager, delta: f64) -> i32 {
-			if eng.key_pressed(Key::Escape) {
-				win.close();
-			}
-			if let Some(data) = self.data.as_mut() {
-				data.camera.debug_controls(eng, delta as f32, 4.0, 1.8);
-				data.rot += Vec3f32::new(1.0, 1.0, 1.0) * delta as f32;
-				win.clear(&[GlClearMask::Color, GlClearMask::Depth]);
-				data.shader.use_shader();
-				data.shader.set_int("tex", 0);
-				data.shader.set_mat4f("camera.view", &data.camera.view());
-				data.shader.set_mat4f("camera.projection", &data.camera.projection(eng.win_aspect_y()));
-				let rot = matrices::rotation_euler(&data.rot);
-				data.shader.set_mat4f("mesh.transform", &(
-					rot.mul_mat(&matrices::translation_3d(&Vec3f32::new(0.0, 0.0, 4.0)))
-				));
-				data.shader.set_mat4f("mesh.rotation", &rot);
-				let tex = data.tex.lock().unwrap();
-				tex.tex.bind();
-				data.msh.buffer.vao.bind();
-				data.shader.draw(data.msh.n_tris());
-				win.swap_buffers();
-				if let (sz, true) = eng.screen_size_changed() {
-					win.set_size(sz);
-					win.set_resolution(sz);
-				}
-			}
+            if eng.key_pressed(Key::Escape) {
+                win.close();
+            }
+            if let Some(data) = self.data.as_mut() {
+                data.camera.debug_controls(eng, delta as f32, 4.0, 1.8);
+                win.clear(&[GlClearMask::Color, GlClearMask::Depth]);
+                data.shader.use_shader();
+                data.shader.set_int("tex", 0);
+                data.shader.set_mat4f("camera.view", &data.camera.view());
+                data.shader.set_mat4f(
+                    "camera.projection",
+                    &data.camera.projection(eng.win_aspect_y()),
+                );
+                for mesh in &data.mshs {
+                    mesh.render(&data.shader);
+                }
+                win.swap_buffers();
+                if let (sz, true) = eng.screen_size_changed() {
+                    win.set_size(sz);
+                    win.set_resolution(sz);
+                }
+            }
             0
         }
         fn destroy(&mut self, win: &mut Window, _man: &mut dyn EventManager, exit_code: i32) {

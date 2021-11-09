@@ -221,82 +221,95 @@ macro_rules! gen_wasm_quat {
                 $QUAT { vec: [x, y, z, w] }
             }
         }
-        #[cfg(target_family = "wasm")]
-        #[wasm_bindgen]
+        #[cfg_attr(target_family = "wasm", wasm_bindgen)]
         impl $QUAT {
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(constructor)]
             pub fn wnew(x: $NUM, y: $NUM, z: $NUM, w: $NUM) -> $QUAT {
                 $QUAT { vec: [x, y, z, w] }
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = copy)]
             pub fn wcopy(&self) -> $QUAT {
                 self.cm_copy()
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = getX)]
             pub fn wget_x(&self) -> f64 {
                 self.get_x() as f64
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = getY)]
             pub fn wget_y(&self) -> f64 {
                 self.get_y() as f64
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = getZ)]
             pub fn wget_z(&self) -> f64 {
                 self.get_z() as f64
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = getW)]
             pub fn wget_w(&self) -> f64 {
                 self.get_w() as f64
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = setX)]
             pub fn wset_x(&mut self, n: f64) {
                 self.set_x(n as $NUM);
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = setY)]
             pub fn wset_y(&mut self, n: f64) {
                 self.set_y(n as $NUM);
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = setZ)]
             pub fn wset_z(&mut self, n: f64) {
                 self.set_z(n as $NUM)
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = setW)]
             pub fn wset_w(&mut self, n: f64) {
                 self.set_w(n as $NUM);
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = print)]
             pub fn wprint(&self) {
                 js_log_string(&format!("{:?}", self));
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = toString)]
             pub fn wto_string(&self) -> String {
                 format!("{:?}", self).into()
             }
-            #[wasm_bindgen(js_name = complexReal)]
-            pub fn wcomplex_real(complex: &$SVEC, real: $NUM) -> $QUAT {
+            #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = complexReal))]
+            pub fn complex_real(complex: &$SVEC, real: $NUM) -> $QUAT {
                 Self::new(complex.get_x(), complex.get_y(), complex.get_z(), real)
             }
-            #[wasm_bindgen(js_name = angleAxis)]
-            pub fn wangle_axis(angle: $NUM, axis: &$SVEC) -> $QUAT {
-                Self::wcomplex_real(
+            #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = angleAxis))]
+            pub fn angle_axis(angle: $NUM, axis: &$SVEC) -> $QUAT {
+                Self::complex_real(
                     &axis.mul_num($NUM::sin(angle * $NUM::half())),
                     $NUM::cos(angle * $NUM::half()),
                 )
             }
-            #[wasm_bindgen(js_name = getComplex)]
-            pub fn wget_complex(&self) -> $SVEC {
+            #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = getComplex))]
+            pub fn get_complex(&self) -> $SVEC {
                 $SVEC::new_arr(&[self.get_x(), self.get_y(), self.get_z()])
             }
-            #[wasm_bindgen(js_name = setComplex)]
-            pub fn wset_complex(&mut self, complex: &$SVEC) {
+            #[cfg_attr(target_family = "wasm", wasm_bindgen(js_name = setComplex))]
+            pub fn set_complex(&mut self, complex: &$SVEC) {
                 self.set_x(complex.get_x());
                 self.set_y(complex.get_y());
                 self.set_z(complex.get_z());
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = normalized)]
             pub fn wnormalized(&self) -> $QUAT {
                 self.normalized()
             }
+			#[cfg(target_family = "wasm")]
             #[wasm_bindgen(js_name = normalize)]
             pub fn wnormalize(&mut self) {
                 self.normalize();
@@ -305,7 +318,6 @@ macro_rules! gen_wasm_quat {
     };
 }
 
-#[cfg(target_family = "wasm")]
 use crate::linear::vector::{Vec3f32, Vec3f64, Vec3i32, Vec3i64};
 
 gen_wasm_quat!(Quaternionf64, f64, Vec3f64);

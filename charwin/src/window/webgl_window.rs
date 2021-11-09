@@ -213,20 +213,22 @@ impl AbstractWindow for WebGlWindow {
         let tex_arc = Arc::clone(&tex);
         let image_arc = Arc::clone(&image);
         let context_arc = self.get_context_arc();
-		let path_string = path.to_string();
+        let path_string = path.to_string();
         *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
             if let Ok(mut tex) = tex_arc.lock() {
                 if let Ok(image) = image_arc.lock() {
                     tex.size = (image.width(), image.height());
                     tex.tex.bind();
-					let mips = if u32::is_power_of_two(image.width()) && u32::is_power_of_two(image.height()) {
-						mipmaps
-					} else {
-						if mipmaps != None {
-							js_warn_string(&format!("Image ({}) improper size ({}x{}) to support specific mipmap level {}.", path_string, image.width(), image.height(), mipmaps.unwrap()));
-						}
-						None
-					};
+                    let mips = if u32::is_power_of_two(image.width())
+                        && u32::is_power_of_two(image.height())
+                    {
+                        mipmaps
+                    } else {
+                        if mipmaps != None {
+                            js_warn_string(&format!("Image ({}) improper size ({}x{}) to support specific mipmap level {}.", path_string, image.width(), image.height(), mipmaps.unwrap()));
+                        }
+                        None
+                    };
                     context_arc
                         .lock()
                         .unwrap()
@@ -241,7 +243,7 @@ impl AbstractWindow for WebGlWindow {
                         .unwrap_or_else(|e| {
                             js_err_string(&format!("WebGL: Could not texture image: {:?}", e));
                         });
-					tex.tex.set_params(mips);
+                    tex.tex.set_params(mips);
                     tex.tex.unbind();
                 } else {
                     js_err_string(&"Loading image element mutex poisoned.");
@@ -1389,14 +1391,19 @@ impl GlTexture2D for WebGlTexture2D {
                 tex_ptr as *mut u8,
                 (width * height) as usize * px_byte_size,
             );
-			let mips = if u32::is_power_of_two(width) && u32::is_power_of_two(height) {
-				mipmaps
-			} else {
-				if mipmaps != None {
-					js_warn_string(&format!("Image improper size ({}x{}) to support specific mipmap level {}.", width, height, mipmaps.unwrap()));
-				}
-				None
-			};
+            let mips = if u32::is_power_of_two(width) && u32::is_power_of_two(height) {
+                mipmaps
+            } else {
+                if mipmaps != None {
+                    js_warn_string(&format!(
+                        "Image improper size ({}x{}) to support specific mipmap level {}.",
+                        width,
+                        height,
+                        mipmaps.unwrap()
+                    ));
+                }
+                None
+            };
             self.context.lock().unwrap()
                 .tex_image_2d_with_i32_and_i32_and_i32_and_format_and_type_and_array_buffer_view_and_src_offset(
                     WebGl2RenderingContext::TEXTURE_2D,

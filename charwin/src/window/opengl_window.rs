@@ -30,7 +30,7 @@ pub struct NativeGlWindow {
             Arc<Mutex<GPUTexture>>,
             JoinHandle<DynamicImage>,
             Receiver<()>,
-			Option<u32>,
+            Option<u32>,
         ),
     >,
     image_thread_count: u32,
@@ -868,12 +868,16 @@ impl NativeGlTexture2D {
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::REPEAT as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::REPEAT as i32);
             gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as i32);
-			if mips == Some(0) {
-				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
-			} else {
-				gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR_MIPMAP_LINEAR as i32);
-				gl::GenerateMipmap(gl::TEXTURE_2D);
-			}
+            if mips == Some(0) {
+                gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as i32);
+            } else {
+                gl::TexParameteri(
+                    gl::TEXTURE_2D,
+                    gl::TEXTURE_MIN_FILTER,
+                    gl::LINEAR_MIPMAP_LINEAR as i32,
+                );
+                gl::GenerateMipmap(gl::TEXTURE_2D);
+            }
         }
     }
 }
@@ -914,14 +918,19 @@ impl GlTexture2D for NativeGlTexture2D {
         _px_byte_size: usize,
     ) {
         unsafe {
-			let mips = if u32::is_power_of_two(width) && u32::is_power_of_two(height) {
-				mipmaps
-			} else {
-				if mipmaps != None {
-					eprintln!("Image improper size ({}x{}) to support specific mipmap level {}.", width, height, mipmaps.unwrap());
-				}
-				None
-			};
+            let mips = if u32::is_power_of_two(width) && u32::is_power_of_two(height) {
+                mipmaps
+            } else {
+                if mipmaps != None {
+                    eprintln!(
+                        "Image improper size ({}x{}) to support specific mipmap level {}.",
+                        width,
+                        height,
+                        mipmaps.unwrap()
+                    );
+                }
+                None
+            };
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 mips.unwrap_or_else(|| 0) as i32,
