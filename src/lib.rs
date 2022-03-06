@@ -5,6 +5,7 @@ mod tests {
     use crate::world::*;
     use charmath::linear::matrix::*;
     use charmath::linear::vector::*;
+	use charmath::linear::quaternion::Quaternionf32;
     use charwin::cw_println;
     use charwin::data::*;
     use charwin::input::*;
@@ -19,6 +20,7 @@ mod tests {
         shader: GPUShader,
         mshs: Vec<Object3D>,
         camera: PerspectiveCamera3D,
+		ctr: f32
     }
     pub struct App {
         data: Option<AppData>,
@@ -113,6 +115,7 @@ mod tests {
                     pos: Vec3f32::new(0.0, 0.0, 0.0),
                     rot: Vec3f32::new(0.0, 0.0, 0.0),
                 },
+				ctr: 0.0
             });
             let mut context = win.get_gl_context();
             context.enable(GlFeature::DepthTest);
@@ -124,6 +127,9 @@ mod tests {
                 win.close();
             }
             if let Some(data) = self.data.as_mut() {
+				data.ctr += (5.0 * delta) as f32;
+				data.mshs[0].rot = Quaternionf32::angle_axis(data.ctr, &Vec3f32::new(1.0, 1.0, 0.0));
+
                 data.camera.debug_controls(eng, delta as f32, 4.0, 1.8);
                 win.clear(&[GlClearMask::Color, GlClearMask::Depth]);
                 data.shader.use_shader();
