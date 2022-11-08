@@ -91,7 +91,7 @@ mod tests {
 				vec3 ambient = getAmbient(diffuseTexture);
 				vec3 diffuse = getDiffuse(diffuseTexture, lightDir, norm);
 				vec3 specular = getSpecular(diffuseTexture, lightDir, norm);
-				FragColor = vec4(ambient + diffuse, 1.0);
+				FragColor = vec4((ambient + diffuse) * specular, 1.0);
             }
             ";
             self.data = Some(AppData {
